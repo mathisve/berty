@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"infratesting/config"
+	"infratesting/iac/components/ec2"
 	"infratesting/testing"
 	"log"
 	"strconv"
@@ -15,7 +17,7 @@ var (
 	testCmd = &cobra.Command{
 		Use: "test",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			availablePeers, err := testing.GetAllEligiblePeers()
+			availablePeers,  err := testing.GetAllEligiblePeers(ec2.Ec2TagType, config.NodeTypePeer)
 			if err != nil {
 				return err
 			}
@@ -67,7 +69,7 @@ var (
 
 			for i := range groups {
 				fmt.Printf("GROUP: %s\n", groups[i].Name)
-				groups[i].Name = uuid.NewString()[:8]
+				groups[i].Name = fmt.Sprintf("%s-%s", groups[i].Name, uuid.NewString()[:8])
 
 				leader := groups[i].Peers[0]
 
@@ -93,11 +95,9 @@ var (
 					}
 				}
 
-				time.Sleep(time.Second * 5)
 
 				for j := range groups[i].Tests {
 					fmt.Println("test: " + strconv.Itoa(j+1))
-					fmt.Println(len(groups[i].Peers))
 					wg := sync.WaitGroup{}
 					for k := range groups[i].Peers {
 						wg.Add(1)
@@ -106,10 +106,10 @@ var (
 						testIndex := j
 						peerIndex := k
 
-						go func() {
+						go func(wg *sync.WaitGroup) {
 							fmt.Println("Started messaging goroutine on: " + groups[i].Peers[peerIndex].Name)
 							var x int
-							for x = 0; x <= 5; x += 1 {
+							for x = 0; x <= 15; x += 1 {
 								err = groups[groupIndex].Peers[peerIndex].SendMessage(groups[groupIndex].Name)
 								if err != nil {
 									panic(err)
@@ -120,7 +120,7 @@ var (
 							fmt.Printf("%s sent %d messages\n", groups[groupIndex].Peers[peerIndex].Name, x)
 
 							wg.Done()
-						}()
+						}(&wg)
 					}
 
 					wg.Wait()
@@ -132,9 +132,8 @@ var (
 						}
 					}
 
-					for _, peer := range availablePeers {
-						fmt.Println(peer.Name)
-						fmt.Println(len(peer.Messages))
+					for p, _ := range availablePeers {
+						fmt.Printf("%s reveived %d messages in group: %s\n", availablePeers[p].Name, len(availablePeers[p].Messages[groups[i].Name]), groups[i].Name)
 					}
 				}
 			}

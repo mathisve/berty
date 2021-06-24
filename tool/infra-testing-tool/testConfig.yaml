@@ -5,6 +5,9 @@ rdvp:
           - name: connection
             to: internet
             protocol: tcp
+          - name: thing
+            to: lan
+            protocol: udp
 
 peer:
     - name: test peers 1
@@ -14,34 +17,41 @@ peer:
         tests:
         - type: text
           size: 40KB
-          interval: 10
+          interval: 2
+      - name: mg 1
+        tests:
+            - type: text
+              size: 40KB
+              interval: 1
       connections:
         - name: connection
           to: internet
           protocol: tcp
+        - name: thing
+          to: lan
+          protocol: udp
+
       routers:
         - type: rdvp
           address: test rdvp
-        - type: relay
-          address: test relay
 
-relay:
-    - name: test relay
-      amount: 1
-      connections:
-          - name: connection
-            to: internet
-            protocol: tcp
-
-bootstrap:
-    - name: test bs
-      amount: 1
-      connections:
-          - name: connection
-            to: internet
-            protocol: tcp
-      routers:
-          - type: rdvp
-            address: test rdvp
-          - type: relay
-            address: test relay
+#relay:
+#    - name: test relay
+#      amount: 1
+#      connections:
+#          - name: connection
+#            to: internet
+#            protocol: tcp
+#
+#bootstrap:
+#    - name: test bs
+#      amount: 1
+#      connections:
+#          - name: connection
+#            to: internet
+#            protocol: tcp
+#      routers:
+#          - type: rdvp
+#            address: test rdvp
+#          - type: relay
+#            address: test relay

@@ -58,10 +58,10 @@ func (p *Peer) GetMessageList(groupName string) error {
 	ctx := context.Background()
 
 	var req protocoltypes.GroupMessageList_Request
-	if p.lastMessageID == nil {
+	if p.lastMessageID[groupName] == nil {
 		req = protocoltypes.GroupMessageList_Request{GroupPK: pk.PublicKey, UntilNow: true}
 	} else {
-		req = protocoltypes.GroupMessageList_Request{GroupPK: pk.PublicKey, UntilID: p.lastMessageID}
+		req = protocoltypes.GroupMessageList_Request{GroupPK: pk.PublicKey, UntilID: p.lastMessageID[groupName]}
 	}
 
 	cl, err := p.Protocol.GroupMessageList(ctx, &req)
@@ -77,7 +77,9 @@ func (p *Peer) GetMessageList(groupName string) error {
 			}
 			break
 		}
-		p.lastMessageID = evt.EventContext.ID
+		p.Lock.Lock()
+		p.lastMessageID[groupName] = evt.EventContext.ID
+		p.Lock.Unlock()
 
 		_, am, err := messengertypes.UnmarshalAppMessage(evt.GetMessage())
 		if err != nil {
@@ -93,7 +95,7 @@ func (p *Peer) GetMessageList(groupName string) error {
 
 		case messengertypes.AppMessage_TypeUserMessage:
 			p.Lock.Lock()
-			p.Messages = append(p.Messages, ToMessageHistory(am))
+			p.Messages[groupName] = append(p.Messages[groupName], ToMessageHistory(am))
 			p.Lock.Unlock()
 		}
 	}

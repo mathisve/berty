@@ -22,8 +22,12 @@ const (
 	ConnTypeLan      = "lan"
 )
 
-// ParseConnections takes the connection, adds it to the global connections
+// parseConnections takes the connection, adds it to the global connections
 func (c NodeGroup) parseConnections() error {
+	if len(c.Connections) == 0 {
+		return errors.New(fmt.Sprintf("%s needs at least 1 connection", c.NodeType))
+	}
+
 	for _, con := range c.Connections {
 		config.Attributes.Connections[con.To] = con
 	}
@@ -32,7 +36,7 @@ func (c NodeGroup) parseConnections() error {
 }
 
 // Validate validates the connections
-func (c *Connection) Validate() error {
+func (c *Connection) validate() error {
 
 	// replace spaces in name
 	// would cause error in terraform otherwise
@@ -58,7 +62,6 @@ func (c *Connection) composeComponents() {
 	var vpc networking.Vpc
 	if config.Attributes.vpc == *new(networking.Vpc) {
 		vpc = networking.NewVpc()
-		vpc.Name = c.Name
 		components = append(components, vpc)
 
 		config.Attributes.vpc = vpc

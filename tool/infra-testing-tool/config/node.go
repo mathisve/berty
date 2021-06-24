@@ -3,6 +3,7 @@ package config
 import (
 	crand "crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	libp2p_ci "github.com/libp2p/go-libp2p-core/crypto"
@@ -57,6 +58,7 @@ type Node struct {
 	Name           string         `yaml:"name"`
 	NodeType       string         `yaml:"nodeType"`
 	NodeAttributes NodeAttributes `yaml:"nodeAttributes"`
+	instance 	   ec2.Instance
 }
 
 // NodeAttributes contains the node specific attributes
@@ -96,10 +98,17 @@ func (c *NodeGroup) composeComponents() {
 		var networkInterfaces []*networking.NetworkInterface
 
 		// GENERATING NETWORK INTERFACES
+		if len(c.Connections) == 0 {
+			panic(fmt.Sprintf("nodegroup %s has no connections", c.Name))
+		}
+
 		// loop over all connections (internet, lan_1, etc)
 		for _, connection := range c.Connections {
-			key := connection.To
-			networkStack := config.Attributes.connectionComponents[key]
+			err := connection.validate()
+			if err != nil {
+				panic(err)
+			}
+			networkStack := config.Attributes.connectionComponents[connection.To]
 
 			var assignedSecurityGroup networking.SecurityGroup
 			var assignedSubnet networking.Subnet
@@ -119,9 +128,18 @@ func (c *NodeGroup) composeComponents() {
 
 			// make a network interface with subnet & security group
 			ni := networking.NewNetworkInterfaceWithAttributes(&assignedSubnet, &assignedSecurityGroup)
+			ni.Connection = connection.Name
+
+			// add networkInterface to node's network interface array
 			networkInterfaces = append(networkInterfaces, &ni)
 			comps = append(comps, ni)
+
+			if connection.connType == ConnTypeInternet {
+				eip := networking.NewElasticIpWithAttributes(&ni)
+				comps = append(comps, eip)
+			}
 		}
+
 
 		// make interface with name, networkInterface & nodeType
 		instance := ec2.NewInstance()
@@ -135,8 +153,13 @@ func (c *NodeGroup) composeComponents() {
 		// generate a port for multiaddr
 		na.Port = generatePort()
 
+		na.Protocol = c.Connections[0].Protocol
+		//for _, c := range c.Connections {
+		//	na.Protocol = c.Protocol
+		//	continue
+		//}
+
 		// assign protocol
-		na.Protocol = "tcp"
 
 		// generate a peerid and pk
 		// only do this for RDVP and Relay
@@ -165,6 +188,7 @@ func (c *NodeGroup) composeComponents() {
 		comps = append(comps, instance)
 
 		c.Nodes[i] = node
+		c.Nodes[i].instance = instance
 	}
 
 	// validate each object
@@ -310,4 +334,40 @@ func (c NodeGroup) parseRouters() (RDVP, Relay, Bootstrap string) {
 	}
 
 	return RDVP, Relay, Bootstrap
+}
+
+// toHCLStringFormat wraps a string so it can be compiled by the HCL compiler
+func toHCLStringFormat(s string) string {
+	return fmt.Sprintf("${%s}", s)
+}
+
+// getFullMultiAddr returns the full multiaddr with its ip (HCL formatted, will compile to an ipv4 ip address when executed trough terraform), protocol, port and peerId
+func (c NodeGroup) getFullMultiAddr(i int) string {
+	// this can only be done for RDVP and Relay
+	// as other node types don't have a peerId pre-configured
+	if len(c.Nodes) >= i-1 {
+		if c.NodeType == NodeTypeRDVP || c.NodeType == NodeTypeRelay {
+			return fmt.Sprintf("/ip4/%s/%s/%d/p2p/%s", c.getPublicIP(i), c.Nodes[i].NodeAttributes.Protocol, c.Nodes[i].NodeAttributes.Port, c.Nodes[i].NodeAttributes.PeerId)
+		}
+		panic(errors.New("cannot use function getFullMultiAddr on a node that is not of type RDVP or Relay"))
+	}
+
+	panic(errors.New("that node doesn't exist"))
+}
+
+// getPublicIP returns the terraform formatting of this Nodes ip
+func (c NodeGroup) getPublicIP(i int) string {
+	for _, ni := range c.Nodes[i].instance.NetworkInterfaces {
+		for _, conn := range c.Connections {
+			if conn.Name == ni.Connection {
+				return toHCLStringFormat(fmt.Sprintf("aws_network_interface.%s.private_ip", ni.Name))
+			}
+		}
+	}
+
+	panic(errors.New("no possible connection possible"))
+
+
+	//
+	//return toHCLStringFormat(fmt.Sprintf("aws_instance.%s.public_ip", c.Name))
 }

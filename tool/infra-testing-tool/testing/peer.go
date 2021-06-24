@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"google.golang.org/grpc"
+	"infratesting/aws"
 	"infratesting/config"
 	iacec2 "infratesting/iac/components/ec2"
 	"strings"
@@ -28,8 +29,8 @@ type Peer struct {
 	Groups        map[string]*protocoltypes.Group
 	ConfigGroups  []config.Group
 	DevicePK      []byte
-	Messages      []MessageHistory
-	lastMessageID []byte
+	Messages      map[string][]MessageHistory
+	lastMessageID map[string][]byte
 }
 
 const (
@@ -42,15 +43,30 @@ func NewPeer(ip string, tags []*ec2.Tag) (p Peer, err error) {
 
 	p.Groups = make(map[string]*protocoltypes.Group)
 	p.Tags = make(map[string]string)
+	p.Messages = make(map[string][]MessageHistory)
+	p.lastMessageID = make(map[string][]byte)
 
 	for _, tag := range tags {
 		p.Tags[strings.ToLower(*tag.Key)] = *tag.Value
 	}
 
+	var retries int
+	var cc *grpc.ClientConn
 	ctx := context.Background()
-	cc, err := grpc.DialContext(ctx, p.GetHost(), grpc.FailOnNonTempDialError(true), grpc.WithInsecure())
-	if err != nil {
-		return p, err
+
+	for {
+
+		cc, err = grpc.DialContext(ctx, p.GetHost(), grpc.FailOnNonTempDialError(true), grpc.WithInsecure())
+		if err != nil {
+			if retries > 3 {
+				return p, err
+			}
+
+			retries += 1
+
+			return p, err
+		}
+		break
 	}
 
 	p.Cc = cc
@@ -94,5 +110,35 @@ func (p *Peer) MatchNodeToPeer(c config.Config) {
 			}
 		}
 	}
-
 }
+
+// GetAllEligiblePeers returns all peers who are potentially eligible to connect to via gRPC
+func GetAllEligiblePeers(tagKey, tagValue string) (peers []Peer, err error) {
+	instances, err := aws.DescribeInstances()
+	if err != nil {
+		return peers, err
+	}
+
+	for _, instance := range instances {
+		if *instance.State.Name != "running" {
+			continue
+		}
+
+		for _, tag := range instance.Tags {
+
+			// if instance is peer
+			if *tag.Key == tagKey && *tag.Value == tagValue {
+				p, err := NewPeer(*instance.PublicIpAddress, instance.Tags)
+				if err != nil {
+					return nil, err
+				}
+				p.Name = *instance.InstanceId
+
+				peers = append(peers, p)
+			}
+		}
+	}
+
+	return peers, nil
+}
+

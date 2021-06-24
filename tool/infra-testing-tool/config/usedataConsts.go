@@ -17,53 +17,53 @@ const (
 `
 
 	peerUserData = `export PUBLIC_IP=0.0.0.0
-export PROTOC=tcp
-export PORT={{.Port }}
+export PROTOC={{.protocol }}
+export PORT={{.port }}
 berty daemon \
   -node.listeners="/ip4/$PUBLIC_IP/tcp/{{.defaultGrpcPort }}/grpc" \
   -p2p.mdns=false \
-  -p2p.static-relays='{{.Relay }}' \
-  -p2p.bootstrap='{{.Bootstrap }}' \
+  -p2p.static-relays='{{.relay }}' \
+  -p2p.bootstrap='{{.bootstrap }}' \
   -p2p.dht-randomwalk=false \
   -p2p.tinder-dht-driver=false \
   -p2p.swarm-listeners=/ip4/$PUBLIC_IP/$PROTOC/$PORT/ \
-  -p2p.rdvp='{{.RDVP }}' \
+  -p2p.rdvp='{{.rdvp }}' \
   -p2p.tinder-rdvp-driver=true \
-  -log.file=/home/ubuntu/log
+  -log.file=/home/ec2-user/
 `
 
 	// TODO: this isn't correct
 	bootstrapUserData = `export PUBLIC_IP=0.0.0.0
-export PORT={{.Port }}
+export PORT={{.port }}
 berty daemon \
   -p2p.mdns=false \
-  -p2p.bootstrap={{.Bootstrap }} \
-  -p2p.rdvp={{.RDVP }} \
-  -p2p.static-relays={{.Relay }} \
+  -p2p.bootstrap={{.bootstrap }} \
+  -p2p.rdvp={{.rdvp }} \
+  -p2p.static-relays={{.relay }} \
   -p2p.tinder-dht-driver=false \
   -p2p.tinder-rdvp-driver=false \
   -p2p.swarm-listeners="/ip4/$PUBLIC_IP/tcp/$PORT" \
-  -log.file=/home/ubuntu/log
+  -log.file=/home/ec2-user/
 `
 
 	rdvpUserData = `export PUBLIC_IP=0.0.0.0
-export PROTOC=tcp
-export PORT={{.Port }}
-export PEER_ID={{.PeerId }}
-rdvp serve -pk {{.Pk | printf "%s" }} \
+export PROTOC={{.protocol }}
+export PORT={{.port }}
+export PEER_ID={{.peerId }}
+rdvp serve -pk {{.pk | printf "%s" }} \
     -l "/ip4/$PUBLIC_IP/$PROTOC/$PORT" \
-	-log.file=/home/ubuntu/log
+	-log.file=/home/ec2-user/
 `
 
 	// TODO: this isn't correct
 	relayUserData = `export PUBLIC_IP=0.0.0.0
-export PROTOC=tcp
-export PORT={{.Port }}
-export PEER_ID={{.PeerId }}
+export PROTOC={{.protocol }}
+export PORT={{.port }}
+export PEER_ID={{.peerId }}
 rdvp serve \
 	-announce "/ip4/$PUBLIC_IP/$PROTOC/$PORT" \
 	-l "/ip4/$PUBLIC_IP/$PROTOC/$PORT" \
-	-log.file=/home/ubuntu/log
+	-log.file=/home/ec2-user/
 `
 
 	//TODO: this isn't correct

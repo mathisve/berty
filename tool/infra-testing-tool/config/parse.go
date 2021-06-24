@@ -79,7 +79,7 @@ func Parse(b []byte) (components []iac.Component, err error) {
 
 	// iterate over connections and compose appropriate HCL components
 	for _, connection := range config.Attributes.Connections {
-		err = connection.Validate()
+		err = connection.validate()
 		if err != nil {
 			panic(err)
 		}

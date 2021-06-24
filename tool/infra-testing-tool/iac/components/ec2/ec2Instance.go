@@ -28,6 +28,7 @@ type Instance struct {
 }
 
 type NetworkInterfaceAttachment struct {
+	Name			   string
 	DeviceIndex        int
 	NetworkInterfaceId string
 }
@@ -69,6 +70,9 @@ func (c Instance) GetType() string {
 
 // GetPrivateIp returns the terraform formatting of this instances' ip
 func (c Instance) GetPrivateIp() string {
+	if len(c.NetworkInterfaceAttachment) == 1 {
+		return fmt.Sprintf("aws_network_interface.%s.private_ip", c.NetworkInterfaceAttachment[0].NetworkInterfaceId)
+	}
 	return fmt.Sprintf("aws_instance.%s.private_ip", c.Name)
 }
 
