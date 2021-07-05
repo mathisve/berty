@@ -159,7 +159,6 @@ func GetAllEligiblePeers(tagKey string, tagValues []string) (peers []Peer, err e
 			}
 		}
 	}
-
 	return peers, nil
 }
 

@@ -28,6 +28,7 @@ func (c NodeGroup) parseConnections() error {
 		return errors.New(fmt.Sprintf("%s needs at least 1 connection", c.NodeType))
 	}
 
+
 	// replace spaces in name
 	// would cause error in terraform otherwise
 	c.Name = strings.ReplaceAll(c.Name, " ", "_")

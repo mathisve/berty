@@ -17,6 +17,7 @@ var (
 	testCmd = &cobra.Command{
 		Use: "test",
 		RunE: func(cmd *cobra.Command, args []string) error {
+
 			availablePeers,  err := testing.GetAllEligiblePeers(ec2.Ec2TagType, []string{config.NodeTypePeer})
 			if err != nil {
 				return err
@@ -135,15 +136,11 @@ var (
 							if err != nil {
 								panic(err)
 							}
-
 							amount := groups[i].Peers[k].CountMessages(groups[i].Name, j)
 							size := groups[i].Peers[k].CountSize(groups[i].Name, j)
 
 							fmt.Printf("%s reveived %d messages with average size of +-%d bytes in group: %s\n", groups[i].Peers[k].Name, amount, size/amount, groups[i].Name)
 						}
-
-
-
 					}
 				//}()
 				//testWg.Wait()

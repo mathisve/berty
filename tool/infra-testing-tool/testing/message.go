@@ -64,6 +64,7 @@ func (p *Peer) GetMessageList(groupName string, testn int) error {
 	ctx := context.Background()
 
 	var req protocoltypes.GroupMessageList_Request
+
 	// TODO figure out how to not receive duplicate messages
 
 	//if p.lastMessageID[groupName] == nil {
@@ -73,6 +74,7 @@ func (p *Peer) GetMessageList(groupName string, testn int) error {
 	//}
 
 	req = protocoltypes.GroupMessageList_Request{GroupPK: pk.PublicKey, UntilNow: true}
+
 
 	cl, err := p.Protocol.GroupMessageList(ctx, &req)
 	if err != nil {
@@ -88,10 +90,8 @@ func (p *Peer) GetMessageList(groupName string, testn int) error {
 			break
 		}
 
-
 		p.Lock.Lock()
 		p.lastMessageID[groupName] = evt.EventContext.ID
-
 		p.Lock.Unlock()
 
 		_, am, err := messengertypes.UnmarshalAppMessage(evt.GetMessage())

@@ -24,7 +24,8 @@ func (p *Peer) GetInvite(groupName string) (invite *messengertypes.ShareableBert
 		return nil, err
 	}
 
-	// add group to peers' daemon
+	// add group to peers' groups
+
 	p.Lock.Lock()
 	p.Groups[groupName] = invite.Link.GetBertyGroup().Group
 	p.Lock.Unlock()
@@ -43,6 +44,7 @@ func (p *Peer) JoinInvite(invite *messengertypes.ShareableBertyGroup_Reply, grou
 	}
 
 	// add group to peers' daemon
+
 	p.Lock.Lock()
 	p.Groups[groupName] = invite.Link.GetBertyGroup().Group
 	p.Lock.Unlock()

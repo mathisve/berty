@@ -1,16 +1,3 @@
-peer:
-    - name: peers
-      amount: 2
-      daemon:
-          - name: group1
-            tests:
-                - type: text
-                  size: 4KB
-                  interval: 3
-      connections:
-          - name: connection
-            to: internet
-            protocol: tcp
 #rdvp:
 #    - name: test rdvp
 #      amount: 2
