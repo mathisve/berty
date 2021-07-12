@@ -11,31 +11,28 @@
 #
 #peer:
 #    - name: test peers 1
-#      amount: 5
+#      amount: 2
 #      daemon:
 #      - name: message group
 #        tests:
 #        - type: text
 #          size: 3KB
 #          interval: 2
-#      - name: mg 1
-#        tests:
-#            - type: text
-#              size: 1KB
-#              interval: 1
-#            - type: text
-#              size: 3KB
-#              interval: 1
-#            - type: text
-#              size: 3KB
-#              interval: 1
+##      - name: mg 1
+##        tests:
+##            - type: text
+##              size: 1KB
+##              interval: 1
+##            - type: text
+##              size: 3KB
+##              interval: 1
+##            - type: text
+##              size: 3KB
+##              interval: 1
 #      connections:
 #        - name: connection
 #          to: internet
 #          protocol: tcp
-#        - name: thing
-#          to: lan
-#          protocol: udp
 #      routers:
 #        - type: rdvp
 #          address: test rdvp
