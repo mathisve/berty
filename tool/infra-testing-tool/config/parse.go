@@ -2,6 +2,7 @@ package config
 
 import (
 	"gopkg.in/yaml.v3"
+	"infratesting/aws"
 	"infratesting/iac"
 	"infratesting/iac/components/ec2"
 	"infratesting/iac/components/various"
@@ -85,12 +86,19 @@ func Parse(b []byte) (components []iac.Component, err error) {
 		components = append(components, config.Peer[i].components...)
 	}
 
+	bucket, err := aws.GetBucketName()
+	if err != nil {
+		return nil, logging.LogErr(err)
+	}
+
 	// iam role
 	iamRole := ec2.NewIamRole()
+	iamRole.S3Bucket = bucket
 	components = prependComponents(components, iamRole)
 
 	// prepend AMI
 	ami := various.NewAmi()
+	ami.Region = GetRegion()
 	comp, err := ami.Validate()
 	if err != nil {
 		return nil, err
@@ -100,6 +108,7 @@ func Parse(b []byte) (components []iac.Component, err error) {
 	// prepend new provider (provider aws)
 	// this is always required!
 	provider := various.NewProvider()
+	provider.Region = GetRegion()
 	components = prependComponents(components, provider)
 
 	return components, err

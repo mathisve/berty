@@ -74,6 +74,7 @@ func (c Connection) composeComponents() {
 	// create a subnet
 	subnet := networking.NewSubnetWithAttributes(&vpc)
 	subnet.CidrBlock = generateNewSubnetCIDR()
+	subnet.AvailabilityZone = generateSubnetAZ()
 
 	components = append(components, subnet)
 
@@ -136,4 +137,10 @@ func generateNewSubnetCIDR() string {
 	default:
 		return ""
 	}
+}
+
+func generateSubnetAZ() string {
+	//TODO
+	// add support for more AZ's here
+	return fmt.Sprintf("%sa", GetRegion())
 }
