@@ -1,14 +1,17 @@
 import React from 'react'
-import { View, TouchableOpacity } from 'react-native'
-import { Text, Icon } from '@ui-kitten/components'
-import LinearGradient from 'react-native-linear-gradient'
+import { View, TouchableOpacity, ActivityIndicator, TextStyle } from 'react-native'
+import { Icon } from '@ui-kitten/components'
 
-import { useStyles } from '@berty-tech/styles'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store/hooks'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 type FooterCreateGroupProps = {
 	title: string
+	titleStyle?: TextStyle | TextStyle[]
 	icon?: string
 	action?: any
+	loading?: boolean
 }
 
 const useStylesCreateGroup = () => {
@@ -19,67 +22,66 @@ const useStylesCreateGroup = () => {
 	}
 }
 
-export const FooterCreateGroup: React.FC<FooterCreateGroupProps> = ({ title, icon, action }) => {
-	const [{ absolute, background, row, padding, color, text }, { scaleSize }] = useStyles()
+export const FooterCreateGroup: React.FC<FooterCreateGroupProps> = ({
+	title,
+	titleStyle,
+	icon,
+	action,
+	loading,
+}) => {
+	const [{ row, padding, text }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 	const _styles = useStylesCreateGroup()
 
 	return (
-		<>
-			<LinearGradient
+		<View style={[padding.horizontal.huge, padding.vertical.large]}>
+			<TouchableOpacity
+				onPress={() => {
+					if (typeof action !== 'function') {
+						console.warn('action is not a function:', action)
+						return
+					}
+					action()
+				}}
 				style={[
-					absolute.bottom,
-					{ alignItems: 'center', justifyContent: 'center', height: '15%', width: '100%' },
-				]}
-				colors={['#ffffff00', '#ffffff80', '#ffffffc0', '#ffffffff']}
-			/>
-			<View
-				style={[
+					padding.horizontal.medium,
+					padding.vertical.small,
 					{
-						position: 'absolute',
-						bottom: 25 * scaleSize,
-						left: 60 * scaleSize,
-						right: 60 * scaleSize,
+						flexDirection: 'row',
+						justifyContent: 'center',
+						backgroundColor: colors['positive-asset'],
 					},
+					_styles.footerCreateGroupButton,
 				]}
 			>
-				<TouchableOpacity onPress={() => action()}>
-					<View
-						style={[
-							background.light.blue,
-							padding.horizontal.medium,
-							padding.vertical.small,
-							{
-								flexDirection: 'row',
-								justifyContent: 'center',
-							},
-							_styles.footerCreateGroupButton,
-						]}
-					>
-						<View style={[row.item.justify]}>
-							<Text
-								style={[
-									text.bold.medium,
-									text.color.blue,
-									text.align.center,
-									_styles.footerCreateGroupText,
-								]}
-							>
-								{title}
-							</Text>
-						</View>
-						{icon && (
-							<View style={[row.item.justify, padding.left.medium]}>
-								<Icon
-									name='arrow-forward-outline'
-									width={25 * scaleSize}
-									height={25 * scaleSize}
-									fill={color.blue}
-								/>
-							</View>
-						)}
+				<View style={[row.item.justify, { flex: 1 }]}>
+					{loading ? (
+						<ActivityIndicator color={colors['background-header']} />
+					) : (
+						<UnifiedText
+							style={[
+								text.bold,
+								text.align.center,
+								_styles.footerCreateGroupText,
+								{ color: colors['background-header'] },
+								titleStyle,
+							]}
+						>
+							{title}
+						</UnifiedText>
+					)}
+				</View>
+				{icon && !loading && (
+					<View style={[row.item.justify, { position: 'absolute', right: 70 * scaleSize }]}>
+						<Icon
+							name='arrow-forward-outline'
+							width={25 * scaleSize}
+							height={25 * scaleSize}
+							fill={colors['background-header']}
+						/>
 					</View>
-				</TouchableOpacity>
-			</View>
-		</>
+				)}
+			</TouchableOpacity>
+		</View>
 	)
 }

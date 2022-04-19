@@ -23,8 +23,7 @@ export type ColorsStyles<T> = Colors<T> &
 		opaque: Colors<T> & ColorsBrightness<T>
 	}
 
-export type SidesTypes = 'top' | 'left' | 'right' | 'bottom' | 'vertical' | 'horizontal'
-export type Sides<T> = {
+type Sides<T> = {
 	top: T
 	left: T
 	right: T
@@ -33,7 +32,6 @@ export type Sides<T> = {
 	horizontal: T
 }
 
-export type SizesTypes = 'tiny' | 'small' | 'medium' | 'large' | 'big' | 'huge' | 'scale'
 export type SizesDeclaration<T> = {
 	tiny: T
 	small: T
@@ -46,16 +44,14 @@ export type Sizes<T> = SizesDeclaration<T> & {
 	scale: (size: number) => T
 }
 
-export type AlignHorizontalTypes = 'left' | 'right' | 'center' | 'fill'
-export type AlignHorizontal<T> = {
+type AlignHorizontal<T> = {
 	left: T
 	right: T
 	center: T
 	fill: T
 }
 
-export type AlignVerticalTypes = 'top' | 'bottom' | 'justify' | 'fill' | 'center'
-export type AlignVertical<T> = {
+type AlignVertical<T> = {
 	top: T
 	bottom: T
 	justify: T
@@ -63,61 +59,45 @@ export type AlignVertical<T> = {
 	center?: T
 }
 
-export type AlignTypes = [AlignHorizontalTypes, AlignVerticalTypes]
-export type Align<T> = AlignHorizontal<T> & AlignVertical<T>
+type Align<T> = AlignHorizontal<T> & AlignVertical<T>
 
-export type BoldDeclarationTypes =
-	| 'normal'
-	| 'bold'
-	| '100'
-	| '200'
-	| '300'
-	| '400'
-	| '500'
-	| '600'
-	| '700'
-	| '800'
-	| '900'
-export type BoldDeclaration<T> = {
-	small: T
-	medium: T
-	huge: T
-}
-
-export type Text = {
+type Text = {
 	color: Colors<{}> & ColorsBrightness<{}>
 	size: Sizes<{}>
-	bold: BoldDeclaration<{ fontWeight: BoldDeclarationTypes }>
+	light: {}
+	lightItalic: {}
+	bold: {}
 	italic: {}
+	extraBold: {}
 	align: Align<{}>
 }
 
-export type BorderRadiusscale<T> = (size: number) => T
-export type BorderRadius<T> = Sizes<T> &
+type BorderRadiusscale<T> = (size: number) => T
+type BorderRadius<T> = Sizes<T> &
 	Sides<Sizes<{}>> & {
 		scale: BorderRadiusscale<T>
 	} & Sides<{
 		scale: BorderRadiusscale<T>
 	}>
 
-export type BorderShadow<T> = Sizes<T>
+type BorderShadow<T> = Sizes<T>
 
-export type Border<T> = Sizes<T> &
+type Border<T> = Sizes<T> &
 	Sides<Sizes<T>> & {
 		radius: BorderRadius<T>
 		shadow: BorderShadow<T>
 		color: Colors<T> & ColorsBrightness<T>
 	}
 
-export type FlexJustifyTypes =
+type FlexJustifyTypes =
 	| 'center'
 	| 'flex-end'
 	| 'flex-start'
 	| 'space-around'
 	| 'space-between'
 	| 'space-evenly'
-export type FlexJustifyType = { justifyContent: FlexJustifyTypes }
-export type FlexJustify<FlexJustifyType> = {
+type FlexJustifyType = { justifyContent: FlexJustifyTypes }
+type FlexJustify<FlexJustifyType> = {
 	center: FlexJustifyType
 	end: FlexJustifyType
 	spaceAround: FlexJustifyType
@@ -126,9 +106,9 @@ export type FlexJustify<FlexJustifyType> = {
 	start: FlexJustifyType
 }
 
-export type FlexAlignTypes = 'stretch' | 'center' | 'flex-start' | 'flex-end' | 'baseline'
-export type FlexAlignType = { alignItems: FlexAlignTypes }
-export type FlexAlign<FlexAlignType> = {
+type FlexAlignTypes = 'stretch' | 'center' | 'flex-start' | 'flex-end' | 'baseline'
+type FlexAlignType = { alignItems: FlexAlignTypes }
+type FlexAlign<FlexAlignType> = {
 	baseline: FlexAlignType
 	center: FlexAlignType
 	end: FlexAlignType
@@ -136,9 +116,9 @@ export type FlexAlign<FlexAlignType> = {
 	stretch: FlexAlignType
 }
 
-export type FlexDirectionTypes = 'row' | 'column'
-export type FlexDirectionType = { flexDirection: FlexDirectionTypes }
-export type FlexDirection<FlexDirectionType> = {
+type FlexDirectionTypes = 'row' | 'column'
+type FlexDirectionType = { flexDirection: FlexDirectionTypes }
+type FlexDirection<FlexDirectionType> = {
 	row: FlexDirectionType
 	column: FlexDirectionType
 }
@@ -183,3 +163,16 @@ export type Styles = {
 }
 
 export type ScaleSizes = { fontScale: number; scaleSize: number; scaleHeight: number }
+
+export type Emoji = {
+	short_name: string
+	unified: string
+	short_names: string[]
+	sheet_x: number
+	sheet_y: number
+	skin_variations?: { [key: string]: Emoji }
+	category: string
+	char: string
+	image_url: string
+	image: string
+}

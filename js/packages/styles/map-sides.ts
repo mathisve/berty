@@ -2,14 +2,15 @@
 import Case from 'case'
 import { StyleSheet } from 'react-native'
 import mem from 'mem'
+
 import { SizesDeclaration, ScaleSizes } from './types'
 import { initialScaleSize } from './constant'
 
-export const mapSideSize = (type: string, side: string, value: number): any => ({
+const mapSideSize = (type: string, side: string, value: number): any => ({
 	[Case.camel(`${type}_${side}`)]: value,
 })
 
-export const mapSideSizes = (decl: SizesDeclaration<number>, type: string, side: string): any => ({
+const mapSideSizes = (decl: SizesDeclaration<number>, type: string, side: string): any => ({
 	...StyleSheet.create({
 		tiny: mapSideSize(type, side, decl.tiny),
 		small: mapSideSize(type, side, decl.small),
@@ -54,14 +55,14 @@ export const mapBorderSidesSizes = (
 	{ scaleSize = initialScaleSize }: { scaleSize: ScaleSizes['scaleSize'] },
 	decl: SizesDeclaration<number>,
 ): any => ({
-	...mapSizes(decl, (borderWidth) => ({ borderWidth }), { scaleSize }),
-	top: mapSizes(decl, (borderTopWidth) => ({ borderTopWidth }), { scaleSize }),
-	left: mapSizes(decl, (borderLeftWidth) => ({ borderLeftWidth }), { scaleSize }),
-	right: mapSizes(decl, (borderRightWidth) => ({ borderRightWidth }), { scaleSize }),
-	bottom: mapSizes(decl, (borderBottomWidth) => ({ borderBottomWidth }), { scaleSize }),
+	...mapSizes(decl, borderWidth => ({ borderWidth }), { scaleSize }),
+	top: mapSizes(decl, borderTopWidth => ({ borderTopWidth }), { scaleSize }),
+	left: mapSizes(decl, borderLeftWidth => ({ borderLeftWidth }), { scaleSize }),
+	right: mapSizes(decl, borderRightWidth => ({ borderRightWidth }), { scaleSize }),
+	bottom: mapSizes(decl, borderBottomWidth => ({ borderBottomWidth }), { scaleSize }),
 	horizontal: mapSizes(
 		decl,
-		(borderWidth) => ({
+		borderWidth => ({
 			borderLeftWidth: borderWidth,
 			borderRightWidth: borderWidth,
 		}),
@@ -69,7 +70,7 @@ export const mapBorderSidesSizes = (
 	),
 	vertical: mapSizes(
 		decl,
-		(borderWidth) => ({
+		borderWidth => ({
 			borderTopWidth: borderWidth,
 			borderBottomWidth: borderWidth,
 		}),

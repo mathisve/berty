@@ -61,7 +61,7 @@ class mainPanel extends React.Component<Props, State> {
 			return (
 				<View style={style.placeholder}>
 					<ArrowLeftOutlined style={style.placeholderIcon} />
-					<Text category="h6">Select a session on the left pannel</Text>
+					<Text category="h6">Select a session on the left panel</Text>
 				</View>
 			);
 		}
@@ -113,7 +113,6 @@ export const MainPanel = withStyles(mainPanel, (theme) => ({
 		width: "100%",
 		height: 60,
 		maxHeight: 60,
-		flex: 1,
 		flexDirection: "row",
 		justifyContent: "center",
 		alignItems: "center",

@@ -1,94 +1,71 @@
 package tech.berty.gobridge.bledriver;
 
-import android.content.Context;
-import android.util.Log;
-
 import java.util.HashMap;
 
 public class PeerManager {
     private static final String TAG = "bty.ble.PeerManager";
+    private final Logger mLogger;
 
-    private static HashMap<String, Peer> mPeers = new HashMap<>();
+    private final HashMap<String, Peer> mPeers = new HashMap<>();
+    
+    public PeerManager(Logger logger) {
+        mLogger = logger;
+    }
 
-    public static synchronized Peer register(String peerID) {
+    public synchronized Peer getPeer(String peerID) {
         Peer peer;
 
         if ((peer = mPeers.get(peerID)) == null) {
-            Log.d(TAG, "register: peer unknown");
-            peer = new Peer(peerID);
+            mLogger.v(TAG, "addPeer: peer unknown");
+            peer = new Peer(mLogger, peerID);
             mPeers.put(peerID, peer);
         } else {
-            Log.d(TAG, "register: peer already known");
+            mLogger.v(TAG, "addPeer: peer already known");
         }
         return peer;
     }
 
-    public static synchronized Peer registerDevice(String peerID, PeerDevice peerDevice, boolean isClient) {
-        Log.v(TAG, String.format("registerDevice called: peerID=%s device=%s client=%b", peerID, peerDevice.getMACAddress(), isClient));
+    public synchronized Peer registerDevice(String peerID, PeerDevice peerDevice, boolean isClient) {
+        mLogger.i(TAG, String.format("registerDevice called: device=%s peerID=%s client=%b", mLogger.sensitiveObject(peerDevice.getMACAddress()), mLogger.sensitiveObject(peerID), isClient));
 
-        Peer peer = register(peerID);
-        boolean prevState = peer.isHandshakeSuccessful();
+        if (!BleInterface.BLEHandleFoundPeer(peerID)) {
+            mLogger.e(TAG, String.format("registerDevice: device=%s peerID=%s: HandleFoundPeer failed", mLogger.sensitiveObject(peerDevice.getMACAddress()), mLogger.sensitiveObject(peerID)));
+            return null;
+        }
+
+        Peer peer = getPeer(peerID);
         if (isClient) {
             peer.addClientDevice(peerDevice);
         } else {
             peer.addServerDevice(peerDevice);
         }
 
-        if (!prevState && peer.isHandshakeSuccessful()) {
-            Log.i(TAG, String.format("registerDevice: BLE handshake successful: peer=%s device=%s", peerID, peerDevice.getMACAddress()));
-            BleInterface.BLEHandleFoundPeer(peerID);
-        }
+        peer.getDevice().flushServerDataCache();
 
         return peer;
     }
 
-    /*public static synchronized void unregisterDevice(String peerID, PeerDevice peerDevice, boolean isClient) {
-        Log.v(TAG, String.format("unregisterDevice called: peerID=%s device=%s client=%b", peerID, peerDevice.getMACAddress(), isClient));
+    public synchronized void unregisterDevices(String peerID) {
+        mLogger.v(TAG, String.format("unregisterDevices called: peerID=%s", mLogger.sensitiveObject(peerID)));
         Peer peer;
 
         if ((peer = mPeers.get(peerID)) == null) {
-            Log.e(TAG, String.format("unregisterDevice error: Peer not found: peer=%s device=%s client=%b", peerID, peerDevice.getMACAddress(), isClient));
-            return;
-        }
-
-        boolean prevState = peer.isHandshakeSuccessful();
-
-        if (isClient) {
-            peer.removeClientDevice(peerDevice);
-        } else {
-            peer.removeServerDevice(peerDevice);
-        }
-
-        if (prevState && !peer.isHandshakeSuccessful()) {
-            Log.i(TAG, String.format("unregisterDevice: lost remote peer: peer=%s device=%s", peerID, peerDevice.getMACAddress()));
-            BleInterface.BLEHandleLostPeer(peerID);
-        }
-
-        if (!peer.isClientReady() && !peer.isServerReady()) {
-            Log.d(TAG, String.format("unregisterDevice: delete Peer: peer=%s device=%s", peerID, peerDevice.getMACAddress()));
-            mPeers.remove(peerID);
-        }
-    }*/
-
-    public static synchronized void unregisterDevices(String peerID) {
-        Log.v(TAG, String.format("unregisterDevices called: peerID=%s", peerID));
-        Peer peer;
-
-        if ((peer = mPeers.get(peerID)) == null) {
-            Log.e(TAG, String.format("unregisterDevices error: Peer not found: peer=%s", peerID));
+            mLogger.i(TAG, String.format("unregisterDevices error: Peer not found: peer=%s", mLogger.sensitiveObject(peerID)));
             return;
         }
 
         if (peer.isHandshakeSuccessful()) {
-            Log.i(TAG, String.format("unregisterDevices: lost remote peer: peer=%s", peerID));
-            BleInterface.BLEHandleLostPeer(peerID);
+            mLogger.i(TAG, String.format("unregisterDevices: call HandleLostPeer for peer: peer=%s", mLogger.sensitiveObject(peerID)));
+            BleDriver.mCallbacksHandler.post(() -> {
+                BleInterface.BLEHandleLostPeer(peerID);
+            });
         }
 
-        peer.disconnectAndRemoveDevices();
+        peer.removeDevices();
         mPeers.remove(peerID);
     }
 
-    public static synchronized Peer get(String peerID) {
+    public synchronized Peer get(String peerID) {
         return mPeers.get(peerID);
     }
 }

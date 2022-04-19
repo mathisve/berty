@@ -15,24 +15,8 @@ func init() {
 {
   "berty": {
     "contacts": {
-      "betabot": {
-        "link": "https://berty.tech/id#contact/oZBLFkhRFWg9NXmy8wtjzZKeeUwfaWQVkUXfNY6h9z4QnGXuXSox8zs2yXeFHzt9DKJ8B4WHy7Zjy1g8tSat6ee2Jh7vp4J/name=BetaBot",
-        "name": "BetaBot",
-        "description": "Official BetaBot",
-        "kind": "Bot",
-        "suggestion": true,
-        "icon": "berty_bot_pink_bg"
-      },
-      "betabot-dev": {
-        "link": "https://berty.tech/id#contact/oZBLFQQTqmZ25yvcRRUVgzzZCpDY7YAVXDEz3g8kmwcSPCmnQrqiMbLrfSp1GRLaNBX6ZRarid8jkSUX4yQYL4oBZcLDtFY/name=BetaBot-Dev",
-        "name": "BetaBot Dev",
-        "description": "BetaBot-Dev",
-        "kind": "Bot",
-        "suggestion": true,
-        "icon": "berty_dev_green_bg"
-      },
       "testbot": {
-        "link": "https://berty.tech/id#contact/oZBLG8gg1RTwCW2u1AxA44dT1Lum2PAr2nBra6WdmTpozq7vdDkae9FjyCW3QZ86AE9pMAudh4GKTfNj1jELcdvtJy44Rbp/name=TestBot",
+        "link": "https://berty.tech/id#contact/oZBLExQaU8TTubcawgfs8AVcH9FbFV5J1kdEVqgueBaFCMWsADV341pCv26zcHMv3GaTL6UHPzVoHzLoereFQLmBGAh2QKb/name=TestBot",
         "name": "TestBot",
         "description": "Official TestBot",
         "kind": "Bot",
@@ -40,12 +24,28 @@ func init() {
         "icon": ""
       },
       "testbot-dev": {
-        "link": "https://berty.tech/id#contact/oZBLFG6fwy21Dn4o511HC6ghxEghB5apq2QhjFepXCkbhfCWjzvRzhetVCGYwWhCtrWVL1TmExtHvdgGBvx1WK1RnXTdato/name=TestBot-Dev",
+        "link": "https://berty.tech/id#contact/oZBLFRW7b1CthoZojwAJTSv27Pg7XAeqHKTDnpCkhz8wx2vGNxef4L6X1Eyh2jB9QdhWFtC6WNpEq6S4nGhZMCfFYEacZPS/name=TestBot-Dev",
         "name": "TestBot Dev",
         "description": "TestBot-Dev",
         "kind": "Bot",
         "suggestion": false,
         "icon": ""
+      },
+      "welcomebot": {
+        "link": "https://berty.tech/id#contact/oZBLFukkeefDcXibkvxHyd1kZpqUUm4mKsE3tgcDakWx6Pa5Ak3VghVyxLZ8vns71EDLWkLbCZ5QcGADnehvxyq3B7LFh14/name=WelcomeBot",
+        "name": "Welcome Bot",
+        "description": "Official Welcome Bot",
+        "kind": "Bot",
+        "suggestion": true,
+        "icon": "berty_bot_pink_bg"
+      },
+      "welcomebot-dev": {
+        "link": "https://berty.tech/id#contact/oZBLFQQTqmZ25yvcRRUVgzzZCpDY7YAVXDEz3g8kmwcSPCmnQrqiMbLrfSp1GRLaNBX6ZRarid8jkSUX4yQYL4oBZcLDtFY/name=WelcomeBot-Dev",
+        "name": "Welcome Dev",
+        "description": "Welcome Bot - Dev",
+        "kind": "Bot",
+        "suggestion": false,
+        "icon": "berty_dev_green_bg"
       }
     },
     "conversations": {
@@ -75,21 +75,15 @@ func init() {
         "maddr": "/ip4/51.159.21.214/tcp/4040/p2p/QmdT7AmhhnbuwvCpa5PH1ySK9HJVB82jr3fo1bxMxBPW6p"
       },
       {
-        "maddr": "/ip4/51.159.21.214/udp/4040/quic/p2p/QmdT7AmhhnbuwvCpa5PH1ySK9HJVB82jr3fo1bxMxBPW6p"
-      },
-      {
         "maddr": "/ip4/51.15.25.224/tcp/4040/p2p/12D3KooWHhDBv6DJJ4XDWjzEXq6sVNEs6VuxsV1WyBBEhPENHzcZ"
-      },
-      {
-        "maddr": "/ip4/51.15.25.224/udp/4040/quic/p2p/12D3KooWHhDBv6DJJ4XDWjzEXq6sVNEs6VuxsV1WyBBEhPENHzcZ"
       }
     ],
     "static-relays": [
-      "/ip4/51.159.21.214/udp/4040/quic/p2p/QmdT7AmhhnbuwvCpa5PH1ySK9HJVB82jr3fo1bxMxBPW6p",
-      "/ip4/51.15.25.224/udp/4040/quic/p2p/12D3KooWHhDBv6DJJ4XDWjzEXq6sVNEs6VuxsV1WyBBEhPENHzcZ",
-      "/ip4/147.75.80.110/udp/4001/quic/p2p/QmbFgm5zan8P6eWWmeyfncR5feYEMPbht5b1FW1C37aQ7y",
-      "/ip4/147.75.195.153/udp/4001/quic/p2p/QmW9m57aiBDHAkKj9nmFSEn7ZqrcF1fZS4bipsTCHburei",
-      "/ip4/147.75.70.221/udp/4001/quic/p2p/Qme8g49gm3q4Acp7xWBKg3nAa9fxZ1YmyDJdyGgoG6LsXh"
+      "/ip4/51.159.21.214/tcp/4040/p2p/QmdT7AmhhnbuwvCpa5PH1ySK9HJVB82jr3fo1bxMxBPW6p",
+      "/ip4/51.15.25.224/tcp/4040/p2p/12D3KooWHhDBv6DJJ4XDWjzEXq6sVNEs6VuxsV1WyBBEhPENHzcZ",
+      "/ip4/147.75.80.110/tcp/4001/p2p/QmbFgm5zan8P6eWWmeyfncR5feYEMPbht5b1FW1C37aQ7y",
+      "/ip4/147.75.195.153/tcp/4001/p2p/QmW9m57aiBDHAkKj9nmFSEn7ZqrcF1fZS4bipsTCHburei",
+      "/ip4/147.75.70.221/tcp/4001/p2p/Qme8g49gm3q4Acp7xWBKg3nAa9fxZ1YmyDJdyGgoG6LsXh"
     ]
   }
 }`

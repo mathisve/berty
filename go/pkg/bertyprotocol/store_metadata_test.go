@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"berty.tech/berty/v2/go/internal/cryptoutil"
 	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/internal/testutil"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
@@ -35,7 +36,7 @@ func TestMetadataStoreSecret_Basic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	peers, groupSK, cleanup := createPeersWithGroup(ctx, t, "/tmp/secrets_test", memberCount, deviceCount)
+	peers, groupSK, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/secrets_test", memberCount, deviceCount)
 	defer cleanup()
 
 	secretsAdded := make(chan struct{})
@@ -112,7 +113,7 @@ func testMemberStore(t *testing.T, memberCount, deviceCount int) {
 	defer cancel()
 
 	// Creates N members with M devices each within the same group
-	peers, groupSK, cleanup := createPeersWithGroup(ctx, t, "/tmp/member_test", memberCount, deviceCount)
+	peers, groupSK, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/member_test", memberCount, deviceCount)
 	defer cleanup()
 
 	done := make(chan struct{})
@@ -178,12 +179,14 @@ func ipfsAPIUsingMockNet(ctx context.Context, t *testing.T) (ipfsutil.ExtendedCo
 	return node.API(), cleanupNode
 }
 
-func TestMetadataRendezvousPointLifecycle(t *testing.T) {
+func TestFlappyMetadataRendezvousPointLifecycle(t *testing.T) {
+	testutil.FilterStabilityAndSpeed(t, testutil.Flappy, testutil.Fast)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Creates N members with M devices each within the same group
-	peers, _, cleanup := createPeersWithGroup(ctx, t, "/tmp/member_test", 1, 1)
+	peers, _, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/member_test", 1, 1)
 	defer cleanup()
 
 	api, cleanupNode := ipfsAPIUsingMockNet(ctx, t)
@@ -193,8 +196,6 @@ func TestMetadataRendezvousPointLifecycle(t *testing.T) {
 	assert.NoError(t, err)
 
 	meta := ownCG.MetadataStore()
-	index, ok := meta.Index().(*metadataStoreIndex)
-	require.True(t, ok)
 
 	accSK, err := peers[0].DevKS.AccountPrivKey()
 	assert.NoError(t, err)
@@ -216,10 +217,8 @@ func TestMetadataRendezvousPointLifecycle(t *testing.T) {
 	assert.Equal(t, accPK, shareableContact.PK)
 	assert.Equal(t, 32, len(shareableContact.PublicRendezvousSeed))
 
-	// fake not set rdv seed, enable rdv point
 	_, err = meta.ContactRequestEnable(ctx)
 	assert.NoError(t, err)
-	index.contactRequestSeed = nil
 
 	enabled, shareableContact = meta.GetIncomingContactRequestsStatus()
 	assert.True(t, enabled)
@@ -253,13 +252,13 @@ func TestMetadataContactLifecycle(t *testing.T) {
 	peersCount := 4
 
 	// Creates N members with M devices each within the same group
-	peers, _, cleanup := createPeersWithGroup(ctx, t, "/tmp/member_test", peersCount, 1)
+	peers, _, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/member_test", peersCount, 1)
 	defer cleanup()
 
 	var (
 		err      error
-		meta     = make([]*metadataStore, peersCount)
-		ownCG    = make([]*groupContext, peersCount)
+		meta     = make([]*MetadataStore, peersCount)
+		ownCG    = make([]*GroupContext, peersCount)
 		contacts = make([]*protocoltypes.ShareableContact, peersCount)
 	)
 
@@ -520,7 +519,7 @@ func TestMetadataAliasLifecycle(t *testing.T) {
 	peersCount := 4
 
 	// Creates N members with M devices each within the same group
-	peers, _, cleanup := createPeersWithGroup(ctx, t, "/tmp/member_test", peersCount, 1)
+	peers, _, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/member_test", peersCount, 1)
 	defer cleanup()
 
 	// disclose
@@ -530,10 +529,10 @@ func TestMetadataAliasLifecycle(t *testing.T) {
 	sk, err := peers[0].DevKS.ContactGroupPrivKey(peers[1].GC.MemberPubKey())
 	require.NoError(t, err)
 
-	g, err := getGroupForContact(sk)
+	g, err := cryptoutil.GetGroupForContact(sk)
 	require.NoError(t, err)
 
-	cg0, err := peers[0].DB.openGroup(ctx, g, nil)
+	cg0, err := peers[0].DB.OpenGroup(ctx, g, nil)
 	require.NoError(t, err)
 
 	require.False(t, cg0.MetadataStore().Index().(*metadataStoreIndex).ownAliasKeySent)
@@ -550,10 +549,10 @@ func TestMetadataAliasLifecycle(t *testing.T) {
 	sk, err = peers[1].DevKS.ContactGroupPrivKey(peers[0].GC.MemberPubKey())
 	require.NoError(t, err)
 
-	g, err = getGroupForContact(sk)
+	g, err = cryptoutil.GetGroupForContact(sk)
 	require.NoError(t, err)
 
-	cg1, err := peers[1].DB.openGroup(ctx, g, nil)
+	cg1, err := peers[1].DB.OpenGroup(ctx, g, nil)
 	require.NoError(t, err)
 
 	_ = cg1
@@ -568,7 +567,7 @@ func TestMetadataGroupsLifecycle(t *testing.T) {
 	defer cancel()
 
 	// Creates N members with M devices each within the same group
-	peers, _, cleanup := createPeersWithGroup(ctx, t, "/tmp/member_test", 1, 1)
+	peers, _, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/member_test", 1, 1)
 	defer cleanup()
 
 	api, cleanupNode := ipfsAPIUsingMockNet(ctx, t)
@@ -683,8 +682,8 @@ func TestMetadataGroupsLifecycle(t *testing.T) {
 	require.Equal(t, groups[0].GroupType, g2.GroupType)
 }
 
-func TestMultiDevices_Basic(t *testing.T) {
-	testutil.FilterStabilityAndSpeed(t, testutil.Unstable, testutil.Slow)
+func TestFlappyMultiDevices_Basic(t *testing.T) {
+	testutil.FilterStabilityAndSpeed(t, testutil.Flappy, testutil.Slow)
 
 	memberCount := 2
 	deviceCount := 3
@@ -693,7 +692,7 @@ func TestMultiDevices_Basic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
-	peers, _, cleanup := createPeersWithGroup(ctx, t, "/tmp/multidevices_test", memberCount, deviceCount)
+	peers, _, cleanup := CreatePeersWithGroupTest(ctx, t, "/tmp/multidevices_test", memberCount, deviceCount)
 	defer cleanup()
 
 	api, cleanupNode := ipfsAPIUsingMockNet(ctx, t)
@@ -709,10 +708,10 @@ func TestMultiDevices_Basic(t *testing.T) {
 
 	var (
 		err          error
-		meta         = make([]*metadataStore, totalDevices)
-		ownCG        = make([]*groupContext, totalDevices)
+		meta         = make([]*MetadataStore, totalDevices)
+		ownCG        = make([]*GroupContext, totalDevices)
 		contacts     = make([]*protocoltypes.ShareableContact, totalDevices)
-		listContacts map[string]*accountContact
+		listContacts map[string]*AccountContact
 		groups       []*protocoltypes.Group
 	)
 

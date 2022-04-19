@@ -2,7 +2,6 @@ package bertyprotocol
 
 import (
 	"context"
-	"crypto/ed25519"
 	"fmt"
 	"testing"
 
@@ -11,42 +10,94 @@ import (
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	datastore "github.com/ipfs/go-datastore"
 	ds_sync "github.com/ipfs/go-datastore/sync"
+	keystore "github.com/ipfs/go-ipfs-keystore"
+	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	libp2p_mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/api/trace"
-	grpc_trace "go.opentelemetry.io/otel/instrumentation/grpctrace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
+	"berty.tech/berty/v2/go/internal/cryptoutil"
+	"berty.tech/berty/v2/go/internal/datastoreutil"
 	"berty.tech/berty/v2/go/internal/ipfsutil"
-	"berty.tech/berty/v2/go/internal/tracer"
 	orbitdb "berty.tech/go-orbit-db"
 	"berty.tech/go-orbit-db/pubsub/pubsubraw"
 )
+
+func TestHelperIPFSSetUp(t *testing.T) (context.Context, context.CancelFunc, libp2p_mocknet.Mocknet, host.Host) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mn := libp2p_mocknet.New(ctx)
+	rdvp, err := mn.GenPeer()
+	require.NoError(t, err, "failed to generate mocked peer")
+
+	return ctx, cancel, mn, rdvp
+}
+
+func NewTestOrbitDB(ctx context.Context, t *testing.T, logger *zap.Logger, node ipfsutil.CoreAPIMock, baseDS datastore.Batching) *BertyOrbitDB {
+	t.Helper()
+
+	api := node.API()
+	selfKey, err := api.Key().Self(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseDS = datastoreutil.NewNamespacedDatastore(baseDS, datastore.NewKey(selfKey.ID().String()))
+
+	pubSub := pubsubraw.NewPubSub(node.PubSub(), selfKey.ID(), logger, nil)
+
+	odb, err := NewBertyOrbitDB(ctx, api, &NewOrbitDBOptions{
+		Datastore: baseDS,
+		NewOrbitDBOptions: orbitdb.NewOrbitDBOptions{
+			Logger: logger,
+			PubSub: pubSub,
+		},
+	})
+	require.NoError(t, err)
+
+	return odb
+}
+
+type mockedPeer struct {
+	CoreAPI ipfsutil.CoreAPIMock
+	DB      *BertyOrbitDB
+	GC      *GroupContext
+	MKS     *cryptoutil.MessageKeystore
+	DevKS   cryptoutil.DeviceKeystore
+}
+
+func (m *mockedPeer) PeerInfo() peer.AddrInfo {
+	return m.CoreAPI.MockNode().Peerstore.PeerInfo(m.CoreAPI.MockNode().Identity)
+}
 
 type TestingProtocol struct {
 	Opts *Opts
 
 	Service Service
 	Client  Client
-	IPFS    ipfsutil.CoreAPIMock
-}
 
-type TestingReplicationPeer struct {
-	Service ReplicationService
+	RootDatastore  datastore.Batching
+	DeviceKeystore cryptoutil.DeviceKeystore
+	IpfsCoreAPI    ipfsutil.ExtendedCoreAPI
+	OrbitDB        *BertyOrbitDB
+	GroupDatastore *cryptoutil.GroupDatastore
 }
 
 type TestingOpts struct {
 	Logger         *zap.Logger
-	TracerProvider trace.Provider
 	Mocknet        libp2p_mocknet.Mocknet
 	RDVPeer        peer.AddrInfo
-	DeviceKeystore DeviceKeystore
+	DeviceKeystore cryptoutil.DeviceKeystore
 	CoreAPIMock    ipfsutil.CoreAPIMock
 	OrbitDB        *BertyOrbitDB
 	ConnectFunc    ConnectTestingProtocolFunc
+	PushSK         *[32]byte
 }
 
 func NewTestingProtocol(ctx context.Context, t *testing.T, opts *TestingOpts, ds datastore.Batching) (*TestingProtocol, func()) {
@@ -74,16 +125,18 @@ func NewTestingProtocol(ctx context.Context, t *testing.T, opts *TestingOpts, ds
 
 	deviceKeystore := opts.DeviceKeystore
 	if deviceKeystore == nil {
-		deviceKeystore = NewDeviceKeystore(ipfsutil.NewDatastoreKeystore(ipfsutil.NewNamespacedDatastore(ds, datastore.NewKey(NamespaceDeviceKeystore))))
+		deviceKeystore = cryptoutil.NewDeviceKeystore(ipfsutil.NewDatastoreKeystore(datastoreutil.NewNamespacedDatastore(ds, datastore.NewKey(NamespaceDeviceKeystore))), nil)
 	}
 
 	odb := opts.OrbitDB
 	if odb == nil {
 		var err error
 
+		pubSub := pubsubraw.NewPubSub(node.PubSub(), node.MockNode().PeerHost.ID(), opts.Logger, nil)
+
 		odb, err = NewBertyOrbitDB(ctx, node.API(), &NewOrbitDBOptions{
 			NewOrbitDBOptions: orbitdb.NewOrbitDBOptions{
-				PubSub: pubsubraw.NewPubSub(node.PubSub(), node.MockNode().PeerHost.ID(), opts.Logger, nil),
+				PubSub: pubSub,
 				Logger: opts.Logger,
 			},
 			Datastore:      ds,
@@ -91,6 +144,9 @@ func NewTestingProtocol(ctx context.Context, t *testing.T, opts *TestingOpts, ds
 		})
 		require.NoError(t, err)
 	}
+
+	groupDatastore, err := cryptoutil.NewGroupDatastore(ds)
+	require.NoError(t, err)
 
 	serviceOpts := Opts{
 		Host:           node.MockNode().PeerHost,
@@ -101,18 +157,13 @@ func NewTestingProtocol(ctx context.Context, t *testing.T, opts *TestingOpts, ds
 		IpfsCoreAPI:    node.API(),
 		OrbitDB:        odb,
 		TinderDriver:   node.Tinder(),
+		PushKey:        opts.PushSK,
+		GroupDatastore: groupDatastore,
 	}
 
 	service, cleanupService := TestingService(ctx, t, serviceOpts)
 
-	if opts.TracerProvider == nil {
-		servicename := node.MockNode().Identity.ShortString()
-		opts.TracerProvider = tracer.NewTestingProvider(t, servicename)
-	}
-
 	// setup client
-	trClient := opts.TracerProvider.Tracer("grpc-client")
-	trServer := opts.TracerProvider.Tracer("grpc-server")
 	grpcLogger := opts.Logger.Named("grpc")
 	zapOpts := []grpc_zap.Option{}
 
@@ -120,18 +171,16 @@ func NewTestingProtocol(ctx context.Context, t *testing.T, opts *TestingOpts, ds
 		grpc_middleware.WithUnaryServerChain(
 			grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.CodeGenRequestFieldExtractor)),
 			grpc_zap.UnaryServerInterceptor(grpcLogger, zapOpts...),
-			grpc_trace.UnaryServerInterceptor(trServer),
 		),
 		grpc_middleware.WithStreamServerChain(
 			grpc_ctxtags.StreamServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.CodeGenRequestFieldExtractor)),
 			grpc_zap.StreamServerInterceptor(grpcLogger, zapOpts...),
-			grpc_trace.StreamServerInterceptor(trServer),
 		),
 	}
 
 	clientOpts := []grpc.DialOption{
-		grpc.WithChainUnaryInterceptor(grpc_trace.UnaryClientInterceptor(trClient)),
-		grpc.WithChainStreamInterceptor(grpc_trace.StreamClientInterceptor(trClient)),
+		grpc.WithChainUnaryInterceptor(),
+		grpc.WithChainStreamInterceptor(),
 	}
 
 	server := grpc.NewServer(serverOpts...)
@@ -141,7 +190,12 @@ func NewTestingProtocol(ctx context.Context, t *testing.T, opts *TestingOpts, ds
 		Opts:    &serviceOpts,
 		Client:  client,
 		Service: service,
-		IPFS:    node,
+
+		RootDatastore:  ds,
+		DeviceKeystore: deviceKeystore,
+		IpfsCoreAPI:    node.API(),
+		OrbitDB:        odb,
+		GroupDatastore: serviceOpts.GroupDatastore,
 	}
 	cleanup := func() {
 		server.Stop()
@@ -162,51 +216,6 @@ func (opts *TestingOpts) applyDefaults(ctx context.Context) {
 	if opts.ConnectFunc == nil {
 		opts.ConnectFunc = ConnectAll
 	}
-}
-
-func testHelperNewReplicationService(ctx context.Context, t *testing.T, logger *zap.Logger, mn libp2p_mocknet.Mocknet, rdvp peer.AddrInfo, ds datastore.Batching) (*replicationService, context.CancelFunc) {
-	t.Helper()
-
-	if ds == nil {
-		ds = ds_sync.MutexWrap(datastore.NewMapDatastore())
-	}
-
-	api, cleanup := ipfsutil.TestingCoreAPIUsingMockNet(ctx, t, &ipfsutil.TestingAPIOpts{
-		Logger:    logger,
-		Mocknet:   mn,
-		RDVPeer:   rdvp,
-		Datastore: ds,
-	})
-	odb, err := NewBertyOrbitDB(ctx, api.API(), &NewOrbitDBOptions{
-		NewOrbitDBOptions: orbitdb.NewOrbitDBOptions{
-			Logger: logger,
-			Cache:  NewOrbitDatastoreCache(ds),
-		},
-	})
-	require.NoError(t, err)
-
-	repl, err := NewReplicationService(ctx, ds, odb, logger)
-	require.NoError(t, err)
-	require.NotNil(t, repl)
-
-	svc, ok := repl.(*replicationService)
-	require.True(t, ok)
-
-	return svc, cleanup
-}
-
-func NewReplicationMockedPeer(ctx context.Context, t *testing.T, secret []byte, sk ed25519.PublicKey, opts *TestingOpts) (*TestingReplicationPeer, func()) {
-	// TODO: handle auth
-	_ = secret
-	_ = sk
-
-	replServ, cleanupReplMan := testHelperNewReplicationService(ctx, t, nil, opts.Mocknet, opts.RDVPeer, nil)
-
-	return &TestingReplicationPeer{
-			Service: replServ,
-		}, func() {
-			cleanupReplMan()
-		}
 }
 
 func NewTestingProtocolWithMockedPeers(ctx context.Context, t *testing.T, opts *TestingOpts, ds datastore.Batching, amount int) ([]*TestingProtocol, func()) {
@@ -240,8 +249,7 @@ func NewTestingProtocolWithMockedPeers(ctx context.Context, t *testing.T, opts *
 	for i := range tps {
 		svcName := fmt.Sprintf("mock%d", i)
 		opts.Logger = logger.Named(svcName)
-		opts.TracerProvider = tracer.NewTestingProvider(t, svcName)
-		ds := ipfsutil.NewNamespacedDatastore(ds, datastore.NewKey(fmt.Sprintf("%d", i)))
+		ds := datastoreutil.NewNamespacedDatastore(ds, datastore.NewKey(fmt.Sprintf("%d", i)))
 
 		tps[i], cls[i] = NewTestingProtocol(ctx, t, opts, ds)
 	}
@@ -356,5 +364,138 @@ func ConnectInLine(t *testing.T, m libp2p_mocknet.Mocknet) {
 
 		_, err = m.ConnectPeers(peers[i], peers[i+1])
 		require.NoError(t, err)
+	}
+}
+
+func CreatePeersWithGroupTest(ctx context.Context, t testing.TB, pathBase string, memberCount int, deviceCount int) ([]*mockedPeer, crypto.PrivKey, func()) {
+	t.Helper()
+
+	var devKS cryptoutil.DeviceKeystore
+
+	mockedPeers := make([]*mockedPeer, memberCount*deviceCount)
+
+	g, groupSK, err := NewGroupMultiMember()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mn := libp2p_mocknet.New(ctx)
+	rdvp, err := mn.GenPeer()
+	require.NoError(t, err, "failed to generate mocked peer")
+
+	_, cleanuprdvp := ipfsutil.TestingRDVP(ctx, t, rdvp)
+
+	ipfsopts := ipfsutil.TestingAPIOpts{
+		Mocknet: mn,
+		RDVPeer: rdvp.Peerstore().PeerInfo(rdvp.ID()),
+	}
+	deviceIndex := 0
+
+	cls := make([]func(), memberCount)
+	for i := 0; i < memberCount; i++ {
+		for j := 0; j < deviceCount; j++ {
+			ca, cleanupNode := ipfsutil.TestingCoreAPIUsingMockNet(ctx, t, &ipfsopts)
+
+			if j == 0 {
+				devKS = cryptoutil.NewDeviceKeystore(keystore.NewMemKeystore(), nil)
+			} else {
+				accSK, err := devKS.AccountPrivKey()
+				require.NoError(t, err, "deviceKeystore private key")
+
+				accProofSK, err := devKS.AccountProofPrivKey()
+				require.NoError(t, err, "deviceKeystore private proof key")
+
+				devKS, err = cryptoutil.NewWithExistingKeys(keystore.NewMemKeystore(), accSK, accProofSK)
+				require.NoError(t, err, "deviceKeystore from existing keys")
+			}
+
+			mk, cleanupMessageKeystore := cryptoutil.NewInMemMessageKeystore()
+
+			db, err := NewBertyOrbitDB(ctx, ca.API(), &NewOrbitDBOptions{
+				DeviceKeystore:  devKS,
+				MessageKeystore: mk,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			gc, err := db.OpenGroup(ctx, g, nil)
+			if err != nil {
+				t.Fatalf("err: creating new group context, %v", err)
+			}
+
+			mp := &mockedPeer{
+				CoreAPI: ca,
+				DB:      db,
+				GC:      gc,
+				MKS:     mk,
+				DevKS:   devKS,
+			}
+
+			// setup cleanup
+			cls[i] = func() {
+				if ms := mp.GC.MetadataStore(); ms != nil {
+					err := ms.Drop()
+					assert.NoError(t, err)
+				}
+
+				if db := mp.DB; db != nil {
+					err := db.Close()
+					assert.NoError(t, err)
+				}
+
+				cleanupNode()
+				cleanupMessageKeystore()
+			}
+
+			mockedPeers[deviceIndex] = mp
+			deviceIndex++
+		}
+	}
+
+	connectPeers(ctx, t, ipfsopts.Mocknet)
+
+	return mockedPeers, groupSK, func() {
+		for _, cleanup := range cls {
+			cleanup()
+		}
+
+		cleanuprdvp()
+
+		_ = rdvp.Close()
+	}
+}
+
+func connectPeers(ctx context.Context, t testing.TB, mn libp2p_mocknet.Mocknet) {
+	t.Helper()
+
+	err := mn.LinkAll()
+	require.NoError(t, err)
+
+	err = mn.ConnectAllButSelf()
+	require.NoError(t, err)
+}
+
+func dropPeers(t *testing.T, mockedPeers []*mockedPeer) {
+	t.Helper()
+
+	for _, m := range mockedPeers {
+		if ms := m.GC.MetadataStore(); ms != nil {
+			if err := ms.Drop(); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if db := m.DB; db != nil {
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if ca := m.CoreAPI; ca != nil {
+			if err := ca.MockNode().Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }

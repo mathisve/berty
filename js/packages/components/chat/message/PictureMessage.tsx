@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { View, TouchableOpacity, Image, ActivityIndicator } from 'react-native'
-import { useMsgrContext } from '@berty-tech/store/hooks'
-import { useStyles } from '@berty-tech/styles'
+
+import { useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
+import { useNavigation } from '@berty/navigation'
+
 import { getSource } from '../../utils'
 import { ImageCounter } from '../ImageCounter'
-
-import { useNavigation } from '@berty-tech/navigation'
+import { useSelector } from 'react-redux'
+import { selectProtocolClient } from '@berty/redux/reducers/ui.reducer'
 
 export const PictureMessage: React.FC<{
 	medias: any
@@ -13,7 +16,8 @@ export const PictureMessage: React.FC<{
 	isHighlight: boolean
 }> = ({ medias, onLongPress, isHighlight }) => {
 	const [{ border }] = useStyles()
-	const { protocolClient } = useMsgrContext()
+	const colors = useThemeColor()
+	const protocolClient = useSelector(selectProtocolClient)
 	const [images, setImages] = useState<any[]>([])
 	const navigation = useNavigation()
 	useEffect(() => {
@@ -24,10 +28,10 @@ export const PictureMessage: React.FC<{
 		Promise.all(
 			medias.map((media: any) => {
 				return getSource(protocolClient, media.cid)
-					.then((src) => {
+					.then(src => {
 						return { ...media, uri: `data:${media.mimeType};base64,${src}` }
 					})
-					.catch((e) => console.error('failed to get picture message image:', e))
+					.catch(e => console.error('failed to get picture message image:', e))
 			}),
 		).then((images: any) => setImages(images.filter(Boolean)))
 	}, [protocolClient, medias])
@@ -53,7 +57,7 @@ export const PictureMessage: React.FC<{
 				{medias.slice(0, medias.length > 4 ? 4 : medias.length).map((media: any, index: number) => (
 					<TouchableOpacity
 						onPress={() => {
-							navigation.navigate.modals.imageView({ images })
+							navigation.navigate('Modals.ImageView', { images })
 						}}
 						onLongPress={onLongPress}
 						activeOpacity={1}
@@ -64,12 +68,14 @@ export const PictureMessage: React.FC<{
 							left: index * 18,
 							bottom: index * 15,
 						}}
+						key={media.cid}
 					>
 						<View
 							key={media.cid}
 							style={[
 								{
-									backgroundColor: '#E9EAF8',
+									backgroundColor: colors['input-background'],
+									shadowColor: colors.shadow,
 									alignItems: 'center',
 									justifyContent: 'center',
 									height: 165,
@@ -78,9 +84,9 @@ export const PictureMessage: React.FC<{
 								border.radius.small,
 								border.shadow.small,
 								isHighlight && {
-									borderColor: '#525BEC',
+									borderColor: colors['background-header'],
 									borderWidth: 1,
-									shadowColor: '#525BEC',
+									shadowColor: colors.shadow,
 									shadowOffset: {
 										width: 0,
 										height: 8,
@@ -93,18 +99,12 @@ export const PictureMessage: React.FC<{
 						>
 							<Image
 								source={{ uri: images[index]?.uri }}
-								style={[
-									{
-										height: 150,
-										width: 150,
-									},
-									border.radius.tiny,
-								]}
+								style={[{ height: 150, width: 150 }, border.radius.tiny]}
 							/>
 
 							{!images[index] && (
 								<ActivityIndicator
-									color='white'
+									color={colors['main-background']}
 									size='large'
 									style={{
 										position: 'absolute',

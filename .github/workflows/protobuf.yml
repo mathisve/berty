@@ -13,7 +13,7 @@ on:
       - "config/**"
       - "docs/Makefile"
       - ".github/workflows/protobuf.yml"
-      - "js/packages/berty-i18n/locale/en/messages.json"
+      - "js/packages/i18n/locale/en/messages.json"
       - "tool/generate-i18n-testlang"
       - "**/gen.sum"
       - "**.pb.go"
@@ -43,7 +43,7 @@ on:
       - "config/**"
       - "docs/Makefile"
       - ".github/workflows/protobuf.yml"
-      - "js/packages/berty-i18n/locale/en/messages.json"
+      - "js/packages/i18n/locale/en/messages.json"
       - "tool/generate-i18n-testlang"
       - "**/gen.sum"
       - "**.pb.go"
@@ -67,10 +67,10 @@ on:
 jobs:
   gen-go-and-docs:
     runs-on: ubuntu-latest
-    container: bertytech/protoc:27
+    container: bertytech/protoc:28
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: unshallow
         run: git fetch --prune --unshallow
       - name: remove lock files
@@ -130,12 +130,17 @@ jobs:
       matrix:
         node: [14.x]
     runs-on: ubuntu-latest
-    container: bertytech/protoc:27
+    container: bertytech/protoc:28
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+
+      - name: Load variables from file
+        uses: antifree/json-to-variables@v1.0.1
+        with:
+          filename: .github/workflows/utils/variables.json
 
       - name: Use Node.js ${{ matrix.node }}
-        uses: actions/setup-node@v2.1.5
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
 
@@ -143,11 +148,11 @@ jobs:
         working-directory: js
 
       - name: Cache Node.js modules
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v2.1.6
         with:
           path: js/node_modules
-          key:          ${{ runner.OS }}-genjs-${{ matrix.node}}-v1-${{ hashFiles('js/yarn.lock') }}
-          restore-keys: ${{ runner.OS }}-genjs-${{ matrix.node}}-v1-
+          key:          ${{ runner.OS }}-genjs-${{ matrix.node}}-${{ env.json_cache-version_node }}-${{ hashFiles('js/yarn.lock') }}
+          restore-keys: ${{ runner.OS }}-genjs-${{ matrix.node}}-${{ env.json_cache-version_node }}-
 
       - name: "Fetch deps"
         # FIXME: find a way of only downloading the required packages or install them directly in the bertytech/protoc image

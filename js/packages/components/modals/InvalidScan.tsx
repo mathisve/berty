@@ -1,11 +1,13 @@
 import React, { useState } from 'react'
 import { View, StyleSheet, TouchableOpacity } from 'react-native'
-import { Text, Icon } from '@ui-kitten/components'
-import { useNavigation } from '@react-navigation/native'
-import { Translation } from 'react-i18next'
-import { useStyles } from '@berty-tech/styles'
+import { Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
-import beapi from '@berty-tech/api'
+
+import { useStyles } from '@berty/styles'
+import beapi from '@berty/api'
+import { useThemeColor } from '@berty/store'
+import { useNavigation } from '@berty/navigation'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 //
 // Scan Invalid
@@ -14,10 +16,11 @@ import beapi from '@berty-tech/api'
 // Styles
 const useStylesInvalidScan = () => {
 	const [{ width, height, border, text, padding, margin }] = useStyles()
+	const colors = useThemeColor()
+
 	return {
 		header: [width(120), height(120), border.radius.scale(60)],
 		dismissButton: [
-			border.color.light.grey,
 			border.scale(2),
 			border.radius.small,
 			margin.top.scale(50),
@@ -25,6 +28,7 @@ const useStylesInvalidScan = () => {
 			padding.right.medium,
 			padding.top.small,
 			padding.bottom.small,
+			{ borderColor: colors['negative-asset'] },
 		],
 		dismissText: [text.size.scale(17)],
 	}
@@ -33,7 +37,7 @@ const useStylesInvalidScan = () => {
 const _invalidScanStyles = StyleSheet.create({
 	errorText: {
 		fontSize: 14,
-		fontFamily: 'Courier',
+		fontFamily: 'Courier, monospace',
 	},
 	body: {
 		bottom: 78,
@@ -42,86 +46,111 @@ const _invalidScanStyles = StyleSheet.create({
 
 const InvalidScanHeader: React.FC<{ title: string }> = ({ title }) => {
 	const _styles = useStylesInvalidScan()
-	const [{ background, margin, text, border, row, column, color }] = useStyles()
+	const [{ margin, text, border, row, column }] = useStyles()
+	const colors = useThemeColor()
 
 	return (
 		<View>
 			<View
 				style={[
-					background.white,
 					border.shadow.medium,
 					margin.bottom.medium,
 					row.item.justify,
 					column.justify,
 					_styles.header,
+					{ backgroundColor: colors['main-background'], shadowColor: colors.shadow },
 				]}
 			>
 				<Icon
 					name='alert-circle-outline'
 					width={100}
 					height={100}
-					fill={color.red}
+					fill={colors['warning-asset']}
 					style={[row.item.justify]}
 				/>
 			</View>
 			<View>
-				<Text style={[text.color.red, text.bold.medium, text.align.center]}>{title}</Text>
+				<UnifiedText style={[text.bold, text.align.center, { color: colors['warning-asset'] }]}>
+					{title}
+				</UnifiedText>
 			</View>
 		</View>
 	)
 }
 
 const InvalidScanError: React.FC<{ error: string }> = ({ error }) => {
-	const [{ border, background, padding, margin, text }] = useStyles()
+	const [{ border, padding, margin, text }] = useStyles()
+	const colors = useThemeColor()
 
 	return (
-		<View style={[border.radius.medium, background.light.red, padding.medium, margin.top.huge]}>
-			<Text
-				style={[text.color.red, text.align.center, text.bold.medium, _invalidScanStyles.errorText]}
+		<View
+			style={[
+				border.radius.medium,
+				padding.medium,
+				margin.top.huge,
+				{ backgroundColor: `${colors['secondary-background-header']}40` },
+			]}
+		>
+			<UnifiedText
+				style={[
+					text.align.center,
+					text.bold,
+					_invalidScanStyles.errorText,
+					{ color: colors['secondary-background-header'] },
+				]}
 			>
 				{error}
-			</Text>
+			</UnifiedText>
 		</View>
 	)
 }
 
-const InvalidScanDismissButton: React.FC<{}> = () => {
+const InvalidScanDismissButton: React.FC = () => {
 	const _styles = useStylesInvalidScan()
-	const [{ row, margin, color, padding, text }] = useStyles()
+	const [{ row, margin, padding }] = useStyles()
+	const colors = useThemeColor()
 	const navigation = useNavigation()
+	const { t }: any = useTranslation()
 
 	return (
-		<Translation>
-			{(t: any): React.ReactNode => (
-				<View style={row.center}>
-					<TouchableOpacity
-						style={[row.fill, margin.bottom.medium, _styles.dismissButton]}
-						onPress={() => {
-							try {
-								navigation.goBack()
-							} catch (e) {
-								console.warn("couldn't go back:", e)
-								navigation.navigate('Tabs')
-							}
-						}}
-					>
-						<Icon name='close' width={30} height={30} fill={color.grey} style={row.item.justify} />
-						<Text
-							style={[text.color.grey, padding.left.small, row.item.justify, _styles.dismissText]}
-						>
-							{t('modals.invalid-scan.dismiss-button')}
-						</Text>
-					</TouchableOpacity>
-				</View>
-			)}
-		</Translation>
+		<View style={row.center}>
+			<TouchableOpacity
+				style={[row.fill, margin.bottom.medium, _styles.dismissButton]}
+				onPress={() => {
+					try {
+						navigation.goBack()
+					} catch (e) {
+						console.warn("couldn't go back:", e)
+					}
+				}}
+			>
+				<Icon
+					name='close'
+					width={30}
+					height={30}
+					fill={colors['secondary-text']}
+					style={row.item.justify}
+				/>
+				<UnifiedText
+					style={[
+						padding.left.small,
+						row.item.justify,
+						_styles.dismissText,
+						{ color: colors['secondary-text'], textTransform: 'uppercase' },
+					]}
+				>
+					{t('modals.invalid-scan.dismiss-button')}
+				</UnifiedText>
+			</TouchableOpacity>
+		</View>
 	)
 }
 
 const InvalidScan: React.FC<{ type: string; error: any }> = ({ type, error }) => {
 	const [layout, setLayout] = useState<number>()
-	const [{ background, padding, border }] = useStyles()
-	const { t } = useTranslation()
+	const [{ padding, border }] = useStyles()
+	const colors = useThemeColor()
+	const { t }: any = useTranslation()
 
 	const isContactAlreadyAdded = error?.error?.errorDetails?.codes?.includes(
 		beapi.errcode.ErrCode.ErrContactRequestContactAlreadyAdded,
@@ -143,11 +172,11 @@ const InvalidScan: React.FC<{ type: string; error: any }> = ({ type, error }) =>
 	return (
 		<View style={[padding.medium, { justifyContent: 'center', height: '100%' }]}>
 			<View
-				onLayout={(e) => !layout && setLayout(e.nativeEvent.layout.height)}
+				onLayout={e => !layout && setLayout(e.nativeEvent.layout.height)}
 				style={[
-					background.white,
 					padding.medium,
 					border.radius.medium,
+					{ backgroundColor: colors['main-background'] },
 					layout && { height: layout - 78 },
 				]}
 			>

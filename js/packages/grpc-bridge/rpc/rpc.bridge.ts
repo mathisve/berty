@@ -1,6 +1,6 @@
 import { Service } from '..'
 import rpcNative from './rpc.native'
-import beapi from '@berty-tech/api'
+import beapi from '@berty/api'
 import { getServiceName } from './utils'
 import * as pbjs from 'protobufjs'
 import { ServiceClientType } from '../welsh-clients.gen'
@@ -21,7 +21,7 @@ const makeStreamClient = <M extends pbjs.Method>(
 		started: false,
 
 		_publish(...args: unknown[]) {
-			this.events.forEach((listener) => listener.apply(this, args))
+			this.events.forEach(listener => listener.apply(this, args))
 		},
 		onMessage(listener: (...a: unknown[]) => void) {
 			this.events.push(listener)
@@ -86,7 +86,6 @@ const makeStreamClient = <M extends pbjs.Method>(
 			}
 
 			const payload = method.resolvedResponseType?.decode(response.payload)
-			this._publish(payload, null)
 			return payload
 		},
 	}
@@ -98,57 +97,49 @@ const makeStreamClient = <M extends pbjs.Method>(
 	}
 }
 
-const unary = (bridgeClient: ServiceClientType<beapi.bridge.BridgeService>) => async <
-	M extends pbjs.Method
->(
-	method: M,
-	request: Uint8Array,
-	_metadata?: never,
-) => {
-	const methodDesc = {
-		name: `/${getServiceName(method)}/${method.name}`,
+const unary =
+	(bridgeClient: ServiceClientType<beapi.bridge.BridgeService>) =>
+	async <M extends pbjs.Method>(method: M, request: Uint8Array, _metadata?: never) => {
+		const methodDesc = {
+			name: `/${getServiceName(method)}/${method.name}`,
+		}
+
+		const response = await bridgeClient.clientInvokeUnary({
+			methodDesc: methodDesc,
+			payload: request,
+			// metadata: {}, // @TODO: pass metdate object
+		})
+		const grpcerr = new GRPCError(response.error)
+		if (!grpcerr.OK) {
+			throw grpcerr
+		}
+
+		return response.payload
 	}
 
-	const response = await bridgeClient.clientInvokeUnary({
-		methodDesc: methodDesc,
-		payload: request,
-		// metadata: {}, // @TODO: pass metdate object
-	})
-	const grpcerr = new GRPCError(response.error)
-	if (!grpcerr.OK) {
-		throw grpcerr
+const stream =
+	(bridgeClient: ServiceClientType<beapi.bridge.BridgeService>) =>
+	async <M extends pbjs.Method>(method: M, request: Uint8Array, _metadata?: never) => {
+		const methodDesc = {
+			name: `/${getServiceName(method)}/${method.name}`,
+
+			isClientStream: !!method.requestStream,
+			isServerStream: !!method.responseStream,
+		}
+
+		const response = await bridgeClient.createClientStream({
+			methodDesc: methodDesc,
+			payload: request,
+			// metadata: {},
+		})
+
+		const grpcerr = new GRPCError(response.error)
+		if (!grpcerr.OK) {
+			throw grpcerr.EOF ? EOF : grpcerr
+		}
+
+		return makeStreamClient(response.streamId, method, bridgeClient)
 	}
-
-	return response.payload
-}
-
-const stream = (bridgeClient: ServiceClientType<beapi.bridge.BridgeService>) => async <
-	M extends pbjs.Method
->(
-	method: M,
-	request: Uint8Array,
-	_metadata?: never,
-) => {
-	const methodDesc = {
-		name: `/${getServiceName(method)}/${method.name}`,
-
-		isClientStream: !!method.requestStream,
-		isServerStream: !!method.responseStream,
-	}
-
-	const response = await bridgeClient.createClientStream({
-		methodDesc: methodDesc,
-		payload: request,
-		// metadata: {},
-	})
-
-	const grpcerr = new GRPCError(response.error)
-	if (!grpcerr.OK) {
-		throw grpcerr.EOF ? EOF : grpcerr
-	}
-
-	return makeStreamClient(response.streamId, method, bridgeClient)
-}
 
 const client = (bridgeClient: ServiceClientType<beapi.bridge.BridgeService>) => ({
 	unaryCall: unary(bridgeClient),

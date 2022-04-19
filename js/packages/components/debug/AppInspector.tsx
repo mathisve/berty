@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
 	View,
-	Text,
 	Platform,
 	TouchableOpacity,
 	ScrollView,
@@ -9,16 +8,24 @@ import {
 	StyleSheet,
 	StatusBar,
 } from 'react-native'
-import RNFS from 'react-native-fs'
-import { berty } from '@berty-tech/api/root.pb'
-import { GRPCError, Service } from '@berty-tech/grpc-bridge'
-import beapi from '@berty-tech/api'
-import { bridge as rpcBridge } from '@berty-tech/grpc-bridge/rpc'
 import { useTranslation } from 'react-i18next'
-import { useMsgrContext } from '@berty-tech/store/context'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import RNFS from 'react-native-fs'
+import { NativeModules } from 'react-native'
 
-export const accountService = Service(beapi.account.AccountService, rpcBridge, null)
+import beapi from '@berty/api'
+import { GRPCError, Service } from '@berty/grpc-bridge'
+import { bridge as rpcBridge } from '@berty/grpc-bridge/rpc'
+import { pbDateToNum } from '@berty/store'
+import { useStyles } from '@berty/styles'
+import { useAppDispatch } from '@berty/hooks'
+import { setDebugMode } from '@berty/redux/reducers/ui.reducer'
+
+import { UnifiedText } from '../shared-components/UnifiedText'
+
+const { RootDir } = NativeModules
+
+const accountService = Service(beapi.account.AccountService, rpcBridge, null)
 
 const styles = StyleSheet.create({
 	safeViewContainer: {
@@ -50,25 +57,20 @@ const styles = StyleSheet.create({
 	},
 	text: {
 		color: '#00ff00',
-		fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+		fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
 	},
-	header1: {
-		fontWeight: 'bold',
-		fontSize: 38,
+	header1: { fontSize: 38 },
+	header2: { fontSize: 22 },
+	textError: {
+		color: '#ff0000',
 	},
-	header2: {
-		fontWeight: 'bold',
-		fontSize: 22,
-	},
-	bold: { fontWeight: 'bold' },
-	textError: { color: '#ff0000', fontWeight: 'bold' },
 })
 
-const getRootDir = () => {
+const getRootDir = async () => {
 	switch (Platform.OS) {
 		case 'ios': // Check GoBridge.swift
 		case 'android': // Check GoBridgeModule.java
-			return RNFS.DocumentDirectoryPath + '/berty'
+			return RootDir.get()
 
 		default:
 			throw new Error('unsupported platform')
@@ -92,32 +94,33 @@ const confirmActionWrapper = (title: string, action: () => void, t: any) => () =
 
 class FSItem {
 	fileName: string = ''
-	metadataFileFound: boolean = false
+	datastoreFound: boolean = false
 	messengerDBFound: boolean = false
-	ipfsConfigFound: boolean = false
+	ipfsRepoFound: boolean = false
 }
 
 const fetchFSAccountList = (updateAccountFSFiles: (arg: Array<FSItem>) => void, t: any) => {
 	const f = async () => {
-		const files = await RNFS.readDir(getRootDir())
+		const rootDir = (await getRootDir()) + '/accounts'
+		const files = await RNFS.readDir(rootDir)
 		const items: Array<FSItem> = []
 
 		for (const file of files) {
 			const fsi = new FSItem()
 
 			try {
-				await RNFS.stat(getRootDir() + '/' + file.name + '/account_meta')
-				fsi.metadataFileFound = true
+				await RNFS.stat(rootDir + '/' + file.name + '/datastore.sqlite')
+				fsi.datastoreFound = true
 			} catch (e) {}
 
 			try {
-				await RNFS.stat(getRootDir() + '/' + file.name + '/account0/messenger.sqlite')
+				await RNFS.stat(rootDir + '/' + file.name + '/messenger.sqlite')
 				fsi.messengerDBFound = true
 			} catch (e) {}
 
 			try {
-				await RNFS.stat(getRootDir() + '/' + file.name + '/ipfs/config')
-				fsi.ipfsConfigFound = true
+				await RNFS.stat(rootDir + '/' + file.name + '/ipfs.sqlite')
+				fsi.ipfsRepoFound = true
 			} catch (e) {}
 
 			fsi.fileName = file.name
@@ -135,7 +138,7 @@ const fetchFSAccountList = (updateAccountFSFiles: (arg: Array<FSItem>) => void, 
 }
 
 const fetchProtoAccountList = (
-	updateAccountProtoEntries: (arg: { [key: string]: berty.account.v1.IAccountMetadata }) => void,
+	updateAccountProtoEntries: (arg: { [key: string]: beapi.account.IAccountMetadata }) => void,
 	t: any,
 ) => {
 	const f = async () => {
@@ -147,7 +150,7 @@ const fetchProtoAccountList = (
 		}
 
 		const allAccounts = (await resp).accounts.reduce<{
-			[key: string]: berty.account.v1.IAccountMetadata
+			[key: string]: beapi.account.IAccountMetadata
 		}>((all, e) => ({ ...all, [e.accountId!]: e }), {})
 
 		updateAccountProtoEntries(allAccounts)
@@ -171,13 +174,13 @@ const accountAction = async (
 	let title = t('debug.inspector.accounts.action-delete.file-exists', { accountId: accountId })
 
 	try {
-		const stat = await RNFS.stat(getRootDir() + '/' + accountId)
+		const stat = await RNFS.stat((await getRootDir()) + '/' + accountId)
 		if (stat.isFile()) {
 			title = t('debug.inspector.accounts.action-delete.file-exists', { accountId: accountId })
 		} else {
 			title = t('debug.inspector.accounts.action-delete.account-exists', { accountId: accountId })
 		}
-	} catch (err) {
+	} catch (err: any) {
 		console.warn(err)
 		Alert.alert(t('debug.inspector.accounts.action-delete.fs-read-error'), err.message)
 		return
@@ -213,8 +216,8 @@ const accountAction = async (
 			text: t('debug.inspector.accounts.action-delete.action-force-delete'),
 			onPress: confirmActionWrapper(
 				t('debug.inspector.accounts.action-delete.action-force-delete-confirm'),
-				() => {
-					RNFS.unlink(getRootDir() + '/' + accountId)
+				async () => {
+					RNFS.unlink((await getRootDir()) + '/' + accountId)
 						.then(() => Alert.alert(t('debug.inspector.accounts.action-delete.success-feedback')))
 						.catch((err: Error) => {
 							console.warn(err)
@@ -236,7 +239,7 @@ const accountAction = async (
 
 // const ExportAllAppData = () => {
 // 	const { t }: { t: any } = useTranslation()
-//
+
 // 	return (
 // 		<TouchableOpacity style={{ flex: 1 }}>
 // 			<View style={[styles.button]}>
@@ -252,24 +255,23 @@ const AccountsInspector: React.FC<{
 }> = ({ lastRefresh, setLastUpdate }) => {
 	const [accountFSFiles, updateAccountFSFiles] = useState<Array<FSItem>>([])
 	const [accountProtoEntries, updateAccountProtoEntries] = useState<{
-		[key: string]: berty.account.v1.IAccountMetadata
+		[key: string]: beapi.account.IAccountMetadata
 	}>({})
 	const { t }: { t: any } = useTranslation()
+	const [{ text }] = useStyles()
 
-	useEffect(() => fetchFSAccountList(updateAccountFSFiles, t), [
-		updateAccountFSFiles,
-		lastRefresh,
-		t,
-	])
-	useEffect(() => fetchProtoAccountList(updateAccountProtoEntries, t), [
-		updateAccountProtoEntries,
-		lastRefresh,
-		t,
-	])
+	useEffect(
+		() => fetchFSAccountList(updateAccountFSFiles, t),
+		[updateAccountFSFiles, lastRefresh, t],
+	)
+	useEffect(
+		() => fetchProtoAccountList(updateAccountProtoEntries, t),
+		[updateAccountProtoEntries, lastRefresh, t],
+	)
 
 	return (
 		<>
-			{accountFSFiles.map((acc) => {
+			{accountFSFiles.map(acc => {
 				const isMetaLoaded = accountProtoEntries.hasOwnProperty(acc.fileName)
 
 				return (
@@ -278,89 +280,110 @@ const AccountsInspector: React.FC<{
 						onPress={() => accountAction(acc.fileName, setLastUpdate, t)}
 					>
 						<View style={[{ paddingBottom: 2, paddingTop: 2 }, styles.button]}>
-							<Text numberOfLines={1} style={[styles.bold, styles.text]}>
+							<UnifiedText numberOfLines={1} style={[text.bold, styles.text]}>
 								{acc.fileName}
-							</Text>
+							</UnifiedText>
 							<View>
 								{isMetaLoaded ? (
 									<>
 										{accountProtoEntries[acc.fileName].name ? (
-											<Text numberOfLines={1} style={[styles.text]}>
+											<UnifiedText numberOfLines={1} style={[styles.text]}>
 												{t('debug.inspector.accounts.infos.aligned.name', {
 													name: accountProtoEntries[acc.fileName].name,
 												})}
-											</Text>
+											</UnifiedText>
 										) : null}
 										{accountProtoEntries[acc.fileName].creationDate ? (
-											<Text numberOfLines={1} style={[styles.text]}>
+											<UnifiedText numberOfLines={1} style={[styles.text]}>
 												{t('debug.inspector.accounts.infos.aligned.created', {
 													created: new Date(
-														parseInt(accountProtoEntries[acc.fileName].creationDate, 10) / 1000,
+														pbDateToNum(accountProtoEntries[acc.fileName].creationDate) / 1000,
 													).toUTCString(),
 												})}
-											</Text>
+											</UnifiedText>
 										) : null}
 
 										{accountProtoEntries[acc.fileName].lastOpened ? (
-											<Text numberOfLines={1} style={[styles.text]}>
+											<UnifiedText numberOfLines={1} style={[styles.text]}>
 												{t('debug.inspector.accounts.infos.aligned.opened', {
 													opened: new Date(
-														parseInt(accountProtoEntries[acc.fileName].lastOpened, 10) / 1000,
+														pbDateToNum(accountProtoEntries[acc.fileName].lastOpened) / 1000,
 													).toUTCString(),
 												})}
-											</Text>
+											</UnifiedText>
 										) : null}
 										{accountProtoEntries[acc.fileName].error ? (
-											<Text style={[styles.text]}>
+											<UnifiedText style={[styles.text]}>
 												{t('debug.inspector.accounts.infos.aligned.error', {
 													error: accountProtoEntries[acc.fileName].error,
 												})}
-											</Text>
+											</UnifiedText>
 										) : null}
 									</>
 								) : (
 									<>
-										<Text numberOfLines={1} style={[styles.text, styles.textError]}>
+										<UnifiedText
+											numberOfLines={1}
+											style={[styles.text, text.bold, styles.textError]}
+										>
 											{t('debug.inspector.accounts.data-not-found')}
-										</Text>
+										</UnifiedText>
 									</>
 								)}
 								<>
 									{!isMetaLoaded && (
 										<>
-											{acc.metadataFileFound && (
-												<Text style={[styles.text, styles.textError]} numberOfLines={1}>
-													{t('debug.inspector.accounts.status.metadata-found')}
-												</Text>
+											{acc.datastoreFound && (
+												<UnifiedText
+													style={[styles.text, text.bold, styles.textError]}
+													numberOfLines={1}
+												>
+													{t('debug.inspector.accounts.status.datastore-found')}
+												</UnifiedText>
 											)}
-											{acc.ipfsConfigFound && (
-												<Text style={[styles.text, styles.textError]} numberOfLines={1}>
-													{t('debug.inspector.accounts.status.ipfs-repo-config-found')}
-												</Text>
+											{acc.ipfsRepoFound && (
+												<UnifiedText
+													style={[styles.text, text.bold, styles.textError]}
+													numberOfLines={1}
+												>
+													{t('debug.inspector.accounts.status.ipfs-repo-found')}
+												</UnifiedText>
 											)}
 											{acc.messengerDBFound && (
-												<Text style={[styles.text, styles.textError]} numberOfLines={1}>
+												<UnifiedText
+													style={[styles.text, text.bold, styles.textError]}
+													numberOfLines={1}
+												>
 													{t('debug.inspector.accounts.status.messenger-db-found')}
-												</Text>
+												</UnifiedText>
 											)}
 										</>
 									)}
 									{isMetaLoaded && !accountProtoEntries[acc.fileName].error && (
 										<>
-											{!acc.metadataFileFound && (
-												<Text style={[styles.text, styles.textError]} numberOfLines={1}>
-													{t('debug.inspector.accounts.status.metadata-not-found')}
-												</Text>
+											{!acc.datastoreFound && (
+												<UnifiedText
+													style={[styles.text, text.bold, styles.textError]}
+													numberOfLines={1}
+												>
+													{t('debug.inspector.accounts.status.datastore-not-found')}
+												</UnifiedText>
 											)}
-											{!acc.ipfsConfigFound && (
-												<Text style={[styles.text, styles.textError]} numberOfLines={1}>
-													{t('debug.inspector.accounts.status.ipfs-repo-config-not-found')}
-												</Text>
+											{!acc.ipfsRepoFound && (
+												<UnifiedText
+													style={[styles.text, text.bold, styles.textError]}
+													numberOfLines={1}
+												>
+													{t('debug.inspector.accounts.status.ipfs-repo-not-found')}
+												</UnifiedText>
 											)}
 											{!acc.messengerDBFound && (
-												<Text style={[styles.text, styles.textError]} numberOfLines={1}>
+												<UnifiedText
+													style={[styles.text, text.bold, styles.textError]}
+													numberOfLines={1}
+												>
 													{t('debug.inspector.accounts.status.messenger-db-not-found')}
-												</Text>
+												</UnifiedText>
 											)}
 										</>
 									)}
@@ -380,7 +403,8 @@ const AppInspector: React.FC<{ embedded: boolean; error: Error | null }> = ({
 }) => {
 	const [lastUpdate, setLastUpdate] = useState(Date.now())
 	const { t }: { t: any } = useTranslation()
-	const { setDebugMode } = useMsgrContext()
+	const [{ text }] = useStyles()
+	const dispatch = useAppDispatch()
 
 	const refresh = useCallback(() => setLastUpdate(Date.now()), [setLastUpdate])
 
@@ -388,49 +412,57 @@ const AppInspector: React.FC<{ embedded: boolean; error: Error | null }> = ({
 		<SafeAreaView style={[styles.safeViewContainer]}>
 			<StatusBar backgroundColor='black' barStyle='light-content' />
 			<View style={{ paddingHorizontal: 12, flexDirection: 'column' }}>
-				<Text style={[styles.text, styles.header1]}>{t('debug.inspector.title')}</Text>
+				<UnifiedText style={[styles.text, text.bold, styles.header1]}>
+					{t('debug.inspector.title')}
+				</UnifiedText>
 
 				<View style={{ paddingVertical: 12 }}>
-					<Text style={[styles.text, styles.header2]}>{t('debug.inspector.errors.title')}</Text>
+					<UnifiedText style={[styles.text, text.bold, styles.header2]}>
+						{t('debug.inspector.errors.title')}
+					</UnifiedText>
 					{error ? (
 						<View style={[styles.button]}>
-							<Text style={[styles.text]}>❌ {t('debug.inspector.errors.header-reported')}</Text>
-							<Text style={[styles.bold]}>{error.message}</Text>
-							<Text>{error.stack}</Text>
+							<UnifiedText style={[styles.text]}>
+								❌ {t('debug.inspector.errors.header-reported')}
+							</UnifiedText>
+							<UnifiedText style={[text.bold]}>{error.message}</UnifiedText>
+							<UnifiedText>{error.stack}</UnifiedText>
 						</View>
 					) : (
-						<Text style={[styles.text, styles.bold, styles.button]}>
+						<UnifiedText style={[styles.text, text.bold, styles.button]}>
 							✅ {t('debug.inspector.errors.header-all-clear')}
-						</Text>
+						</UnifiedText>
 					)}
 				</View>
 			</View>
 
 			<ScrollView style={[styles.page]} contentContainerStyle={{ paddingBottom: 30 }}>
-				<Text style={[styles.text, styles.header2]}>{t('debug.inspector.accounts.title')}</Text>
+				<UnifiedText style={[styles.text, styles.header2]}>
+					{t('debug.inspector.accounts.title')}
+				</UnifiedText>
 				{embedded ? (
 					<AccountsInspector lastRefresh={lastUpdate} setLastUpdate={setLastUpdate} />
 				) : (
-					<Text style={[styles.text]}>
+					<UnifiedText style={[styles.text]}>
 						❌ {t('debug.inspector.accounts.unsupported-remote-mode')}
-					</Text>
+					</UnifiedText>
 				)}
 			</ScrollView>
 			<View style={{ position: 'absolute', bottom: 30, left: 0, right: 0 }}>
 				<View style={{ flexDirection: 'row', paddingHorizontal: 12 }}>
 					<TouchableOpacity onPress={refresh} style={{ flex: 1 }}>
 						<View style={[styles.footerButton]}>
-							<Text style={[styles.text, styles.bold, { textAlign: 'center' }]}>
+							<UnifiedText style={[styles.text, text.bold, { textAlign: 'center' }]}>
 								{t('debug.inspector.refresh')}
-							</Text>
+							</UnifiedText>
 						</View>
 					</TouchableOpacity>
 					{/*<ExportAllAppData />*/}
-					<TouchableOpacity onPress={() => setDebugMode(false)} style={{ flex: 1 }}>
+					<TouchableOpacity onPress={() => dispatch(setDebugMode(false))} style={{ flex: 1 }}>
 						<View style={[styles.footerButton]}>
-							<Text style={[styles.text, styles.bold, { textAlign: 'center' }]}>
+							<UnifiedText style={[styles.text, text.bold, { textAlign: 'center' }]}>
 								{t('debug.inspector.hide-button')}
-							</Text>
+							</UnifiedText>
 						</View>
 					</TouchableOpacity>
 				</View>

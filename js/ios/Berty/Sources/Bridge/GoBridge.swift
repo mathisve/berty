@@ -23,7 +23,7 @@ class GoBridge: NSObject {
 
     // protocol
     var bridgeMessenger: BertybridgeBridge?
-    let rootdir: URL
+    let rootDir: String
 
     static func requiresMainQueueSetup() -> Bool {
         return true
@@ -31,8 +31,7 @@ class GoBridge: NSObject {
 
     override init() {
         // set berty dir for persistence
-        let absUserUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        self.rootdir = absUserUrl.appendingPathComponent("berty", isDirectory: true)
+        self.rootDir = try! RootDirGet()
 
         super.init()
     }
@@ -40,9 +39,7 @@ class GoBridge: NSObject {
     deinit {
       do {
         if self.bridgeMessenger != nil {
-            NSLog("bflifecycle: calling try self.bridgeMessenger?.close()")
             try self.bridgeMessenger?.close()
-            NSLog("bflifecycle: done try self.bridgeMessenger?.close()")
             self.bridgeMessenger = nil
         }
       } catch let error as NSError {
@@ -52,9 +49,8 @@ class GoBridge: NSObject {
 
     @objc func clearStorage(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         do {
-            let rootExists = FileManager.default.fileExists(atPath: self.rootdir.path)
-            if rootExists {
-                try FileManager.default.removeItem(atPath: self.rootdir.path)
+            if FileManager.default.fileExists(atPath: self.rootDir) {
+                try FileManager.default.removeItem(atPath: self.rootDir)
             }
             resolve(true)
         }
@@ -64,6 +60,7 @@ class GoBridge: NSObject {
     }
 
     @objc func log(_ opts: NSDictionary) {
+        #if !CFG_APPSTORE
         if let message = opts["message"] as? String {
             let type = opts["level"] as? String ?? "info"
 
@@ -73,40 +70,54 @@ class GoBridge: NSObject {
             // log
             self.logger.print(message as NSString, level: level, category: "react-native")
         }
+        #endif
     }
 
-    //////////////
+    // //////// //
     // Protocol //
-    //////////////
+    // //////// //
 
     @objc func initBridge(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         do {
             if self.bridgeMessenger != nil {
-                throw NSError(domain: "already started", code: 1)
+                throw NSError(domain: "tech.berty.gobridge", code: 1, userInfo: [NSLocalizedDescriptionKey : "already started"])
             }
 
             var err: NSError?
             guard let config = BertybridgeNewConfig() else {
-                throw NSError(domain: "unable to create config", code: 1)
+                throw NSError(domain: "tech.berty.gobridge", code: 2, userInfo: [NSLocalizedDescriptionKey : "unable to create config"])
             }
 
-            config.setLoggerDriver(LoggerDriver("tech.berty", "protocol"))
+            #if CFG_APPSTORE
+            config.setLoggerDriver(nil)
+            #else
+            config.setLoggerDriver(LoggerDriver("tech.berty", "gomobile"))
+            #endif
+
+            // get user preferred languages
+            let preferredLanguages: String = Locale.preferredLanguages.joined(separator: ",")
+
             config.setLifeCycleDriver(LifeCycleDriver.shared)
             config.setNotificationDriver(NotificationDriver.shared)
+            config.setKeystoreDriver(KeystoreDriver.shared)
+            config.setPreferredLanguages(preferredLanguages)
 
             // @TODO(gfanton): make this dir in golang
             var isDirectory: ObjCBool = true
-            let exist = FileManager.default.fileExists(atPath: self.rootdir.path, isDirectory: &isDirectory)
+            let exist = FileManager.default.fileExists(atPath: self.rootDir, isDirectory: &isDirectory)
             if !exist {
-                try FileManager.default.createDirectory(atPath: self.rootdir.path, withIntermediateDirectories: true, attributes: nil)
+                try FileManager.default.createDirectory(atPath: self.rootDir, withIntermediateDirectories: true, attributes: nil)
             }
 
-            NSLog("root dir: `%@`", self.rootdir.path)
-            config.setRootDir(self.rootdir.path)
+            // Disable iOS backup
+            var url = URL(fileURLWithPath: self.rootDir)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try url.setResourceValues(values)
 
-            NSLog("bflifecycle: calling BridgeNewMessengerBridge")
+            config.setRootDir(self.rootDir)
+
             let bridgeMessenger = BertybridgeNewBridge(config, &err)
-            NSLog("bflifecycle: done BridgeNewMessengerBridge")
             if err != nil {
                 throw err!
             }
@@ -122,9 +133,7 @@ class GoBridge: NSObject {
     @objc func closeBridge(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         do {
             if self.bridgeMessenger != nil {
-                NSLog("bflifecycle: calling try self.messengerProtocol?.close()")
                 try self.bridgeMessenger?.close()
-                NSLog("bflifecycle: done try self.bridgeMessenger?.close()")
                 self.bridgeMessenger = nil
             }
             resolve(true)
@@ -136,7 +145,7 @@ class GoBridge: NSObject {
     @objc func invokeBridgeMethod(_ method: String, b64message: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         do {
             guard let bridgeMessenger = self.bridgeMessenger else {
-                throw NSError(domain: "bridgeMessenger isn't started", code: 1)
+                throw NSError(domain: "tech.berty.gobridge", code: 3, userInfo: [NSLocalizedDescriptionKey : "bridgeMessenger isn't started"])
             }
 
             let promise = PromiseBlock(resolve, reject)
@@ -148,9 +157,9 @@ class GoBridge: NSObject {
 
     @objc func getProtocolAddr(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         do {
-            guard let bridgeMessenger = self.bridgeMessenger else {
-                throw NSError(domain: "bridgeMessenger isn't started", code: 1)
-            }
+          if self.bridgeMessenger == nil {
+              throw NSError(domain: "tech.berty.gobridge", code: 4, userInfo: [NSLocalizedDescriptionKey : "bridgeMessenger isn't started"])
+          }
 
           let addr: [String] = []
           resolve(addr)

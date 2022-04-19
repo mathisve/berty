@@ -9,13 +9,19 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"moul.io/u"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 func TestPersistentIdentity(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("disabled on windows")
 	}
+
+	// @FIXME(gfanton): avoid write error caused by grpc logger
+	logutil.ReplaceGRPCLogger(zap.NewNop())
 
 	// create tempdir for the test
 	var tempdir string
@@ -34,7 +40,7 @@ func TestPersistentIdentity(t *testing.T) {
 	// berty1: init a new account
 	var key1 string
 	{
-		closer, err := u.CaptureStdoutAndStderr()
+		closer, err := u.CaptureStdout()
 		require.NoError(t, err)
 		err = runMain([]string{
 			"share-invite",
@@ -45,6 +51,7 @@ func TestPersistentIdentity(t *testing.T) {
 		require.NoError(t, err)
 		key1 = strings.TrimSpace(closer())
 		require.NotEmpty(t, key1)
+		require.Contains(t, key1, "https://berty.tech/id")
 	}
 
 	// berty1: export account
@@ -60,7 +67,7 @@ func TestPersistentIdentity(t *testing.T) {
 
 	// berty2: init a new account from export
 	{
-		closer, err := u.CaptureStdoutAndStderr()
+		closer, err := u.CaptureStdout()
 		require.NoError(t, err)
 		err = runMain([]string{
 			"share-invite",

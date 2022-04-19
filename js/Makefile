@@ -9,10 +9,11 @@ BERTY_DAEMON_PORT ?= 1337
 BERTY_DAEMON_OPTS ?= -p2p.webui-listener=""
 BERTY_DAEMON_STORE ?= -store.dir=$(BERTY_DAEMON_PORT).db.d
 METRO_RN_PORT ?= 8081
+IOS_RN_FLAGS ?= --udid
 IOS_DEVICE ?=
 ANDROID_DEVICE ?=
 GO ?= go # this allows to override the go version used
-GO_TAGS ?= -tags fts5
+GO_TAGS ?= -tags "fts5 sqlite sqlite_unlock_notify"
 
 ## Internal variables
 
@@ -33,8 +34,9 @@ android_gomobile_cache=android/.gomobile-cache
 ## if (PWD != Makefile directory) then exit
 
 makefile_dir = $(realpath $(dir $(realpath $(firstword $(MAKEFILE_LIST)))))
-ifneq ($(PWD),$(makefile_dir))
-    $(error make should be executed from '$(makefile_dir)' instead of '$(PWD)')
+real_pwd = $(realpath $(PWD))
+ifneq ($(real_pwd),$(makefile_dir))
+	$(error make should be executed from '$(makefile_dir)' instead of '$(real_pwd)')
 endif
 
 ## User commands
@@ -58,6 +60,7 @@ help:
 	@echo "  ios.release          Launch iOS app in release mode          IOS_DEVICE=<virtual/real device>"
 	@echo "  lint                 Run eslint"
 	@echo "  lint.fix             Run eslint and fix errors"
+	@echo "  js.unused_exports    Run ts-unused-exports"
 	@echo "  metro.start          Start React-Native Metro (app debug)"
 	@echo "  regenerate           Clean and generate Protobuf files"
 	@echo "  test                 Run tests"
@@ -101,6 +104,10 @@ endif
 	rm -rf /tmp/metro-bundler-cache-*
 	rm -rf .eslintcache
 
+	# Web files
+	rm -rf web/node_modules
+	rm -rf web/build
+
 	# Android files
 	rm -rf android/.gradle
 	rm -rf android/build
@@ -110,8 +117,7 @@ endif
 	# iOS files
 	rm -rf ios/build
 	rm -rf ios/Pods
-	rm -rf ios/Frameworks/Bertybridge.framework
-	rm -rf ios/tor-deps
+	rm -rf ios/Frameworks/Bertybridge.xcframework
 	rm -rf ios/vendor
 	rm -rf ios/Berty.xcodeproj
 	rm -rf ios/Berty.xcworkspace
@@ -153,9 +159,8 @@ lint: node_modules
 	cp .gitignore .eslintignore
 	echo '*.pb.*' >> .eslintignore
 	echo '*.gen.*' >> .eslintignore
-	# ignore web-dev-app until it's integrated with new tools config
-	echo '/packages/web-dev-app/' >> .eslintignore
 	npx eslint --cache --quiet --ext=.js,.jsx,.ts,.tsx .
+	npx tsc # check static typing
 
 .PHONY: lint.fix
 lint.fix: node_modules
@@ -163,9 +168,15 @@ lint.fix: node_modules
 	cp .gitignore .eslintignore
 	echo '*.pb.*' >> .eslintignore
 	echo '*.gen.*' >> .eslintignore
-	# ignore web-dev-app until it's integrated with new tools config
-	echo '/packages/web-dev-app/' >> .eslintignore
 	npx eslint --cache --quiet --ext=.js,.jsx,.ts,.tsx --fix .
+	npx tsc # check static typing
+
+#### Look for js Unused exports
+
+.PHONY: js.unused_exports
+js.unused_exports: node_modules
+	$(call check-program, npx)
+	npx ts-unused-exports ./tsconfig.json --excludePathsFromReport="grpc-bridge;go-bridge;api;polyfill" --ignoreTestFiles --ignoreFiles=.*gen
 
 ###################
 # Build/Run rules #
@@ -184,7 +195,7 @@ ios.debug: ios.app_deps
 		--port="$(METRO_RN_PORT)" \
 		--configuration='Debug' \
 		--scheme='Berty Debug' \
-		$(if $(IOS_DEVICE),--simulator='$(IOS_DEVICE)',)
+		$(if $(IOS_DEVICE),$(IOS_RN_FLAGS)='$(IOS_DEVICE)',)
 
 .PHONY: ios.release
 ios.release: ios.app_deps
@@ -194,7 +205,7 @@ ios.release: ios.app_deps
 		--port="$(METRO_RN_PORT)" \
 		--configuration='AppStore Release' \
 		--scheme='Berty AppStore' \
-		$(if $(IOS_DEVICE),--simulator='$(IOS_DEVICE)',)
+		$(if $(IOS_DEVICE),$(IOS_RN_FLAGS)='$(IOS_DEVICE)',)
 
 .PHONY: ios.log
 ios.log:
@@ -205,7 +216,7 @@ ios.log:
 ios.project: ios/Berty.xcworkspace
 
 .PHONY: ios.gomobile
-ios.gomobile: ios/Frameworks/Bertybridge.framework
+ios.gomobile: ios/Frameworks/Bertybridge.xcframework ios/Frameworks/Bertypush.xcframework
 
 #### Android
 
@@ -262,10 +273,15 @@ android.reverse_tcp:
 
 #### Web
 
-.PHONY: web-dev-app.start
-web-dev-app.start:
+.PHONY: web.start
+web.start: web/node_modules
 	$(call check-program, yarn)
-	cd packages/web-dev-app && yarn && yarn start
+	cd web && yarn && yarn start
+
+.PHONY: web.build
+web.build: web/node_modules
+	$(call check-program, yarn)
+	cd web && yarn && yarn build
 
 #### React
 
@@ -293,7 +309,7 @@ daemon.start.docker:
 
 pbjs_common_flags := --force-long -p ../api -p node_modules/@googleapis/googleapis -p `$(GO) list -m -modfile=../go.mod -mod=mod -f {{.Dir}} github.com/grpc-ecosystem/grpc-gateway`/third_party/googleapis -p `$(GO) list -m -modfile=../go.mod -mod=mod -f {{.Dir}} github.com/gogo/protobuf` -p node_modules/@protocolbuffers/protobuf/src
 
-pbjs_protos := ../api/bertyaccount.proto ../api/bertybridge.proto ../api/protocoltypes.proto ../api/messengertypes.proto
+pbjs_protos := ../api/accounttypes.proto ../api/bertybridge.proto ../api/protocoltypes.proto ../api/messengertypes.proto ../api/pushtypes.proto
 
 packages/api/root.pb.js: $(wildcard ../api/*) node_modules
 	$(call check-program, npx)
@@ -323,7 +339,13 @@ packages/store/types.gen.ts: packages/store/gen-type-utils.js packages/api/root.
 	npx babel-node packages/store/gen-type-utils.js > $@
 	npx eslint --no-ignore --fix $@
 
-_gen.pbjs: packages/api/root.pb.js packages/api/root.pb.d.ts packages/grpc-bridge/welsh-clients.gen.ts packages/store/types.gen.ts
+packages/redux/messengerActions.gen.ts: packages/redux/gen-messenger-actions.js packages/api/root.pb.js node_modules
+	$(call check-program, npx)
+	npx babel-node packages/redux/gen-messenger-actions.js > $@
+	npx eslint --no-ignore --fix $@
+
+
+_gen.pbjs: packages/api/root.pb.js packages/api/root.pb.d.ts packages/grpc-bridge/welsh-clients.gen.ts packages/store/types.gen.ts packages/redux/messengerActions.gen.ts
 .PHONY: _gen.pbjs
 
 ##### other generation
@@ -333,7 +355,7 @@ _gen.config:
 
 ##### gen.sum
 
-gensum_src := Makefile ../api/protocoltypes.proto ../api/messengertypes.proto
+gensum_src := Makefile ../api/protocoltypes.proto ../api/messengertypes.proto ../api/accounttypes.proto
 gen.sum: $(gensum_src)
 	$(call check-program, shasum)
 	@shasum $(gensum_src) | sort > gen.sum.tmp
@@ -351,31 +373,53 @@ _write_gen_sum:
 
 #### iOS
 
-ios/Frameworks/Bertybridge.framework: $(bridge_src)
+ios/Frameworks/Bertybridge.xcframework: $(bridge_src)
+	mkdir -p ios/.gomobile-cache
 	cd .. && $(GO) mod download
 	cd .. && $(GO) install golang.org/x/mobile/cmd/gobind
-	cd .. && $(GO) run golang.org/x/mobile/cmd/gomobile init
-	# Download required go-libtor deps if needed
-	../tool/build/shell/dl-go-libtor-ios.sh
+	cd .. && ANDROID_HOME= ANDROID_NDK_HOME= $(GO) run golang.org/x/mobile/cmd/gomobile init
 	mkdir -p ios/Frameworks
 	cd .. && \
 		PATH="$(PATH):`go env GOPATH`/bin" \
-		GO111MODULE=on \
-		LIBRARY_PATH="$(PWD)/ios/tor-deps/lib" \
-		CPATH="$(PWD)/ios/tor-deps/include" \
+		CGO_CPPFLAGS=-DHAVE_GETHOSTUUID=0 \
+		GO111MODULE=on ANDROID_HOME= ANDROID_NDK_HOME= \
 		$(GO) run golang.org/x/mobile/cmd/gomobile bind \
 			-o js/$@ \
 			-v $(ext_ldflags) \
 			$(GO_TAGS) \
-			-cache "$(PWD)/ios/.gomobile-cache" \
+			-cache "$(PWD)/ios/.gomobile-cache/bertybridge" \
 			-target ios \
 			-iosversion $(minimum_ios_ver) \
 			./go/framework/bertybridge
 	touch $@
+	cd .. && $(GO) mod tidy
 
-ios/Berty.xcworkspace: ios/Berty.xcodeproj ios/Podfile ios/vendor/bundle package.json ios/OpenSSL-Universal-Override.podspec node_modules
+ios/Frameworks/Bertypush.xcframework: $(bridge_src)
+	mkdir -p ios/.gomobile-cache
+	cd .. && $(GO) mod download
+	cd .. && $(GO) install golang.org/x/mobile/cmd/gobind
+	cd .. && ANDROID_HOME= ANDROID_NDK_HOME= $(GO) run golang.org/x/mobile/cmd/gomobile init
+	mkdir -p ios/Frameworks
+	cd .. && \
+		PATH="$(PATH):`go env GOPATH`/bin" \
+		CGO_CPPFLAGS=-DHAVE_GETHOSTUUID=0 \
+		GO111MODULE=on ANDROID_HOME= ANDROID_NDK_HOME= \
+		$(GO) run golang.org/x/mobile/cmd/gomobile bind \
+			-o js/$@ \
+			-v $(ext_ldflags) \
+			$(GO_TAGS) \
+			-cache "$(PWD)/ios/.gomobile-cache/bertypush" \
+			-target ios \
+			-iosversion $(minimum_ios_ver) \
+			./go/framework/bertypush
+	touch $@
+	cd .. && $(GO) mod tidy
+
+
+
+ios/Berty.xcworkspace: ios/Berty.xcodeproj ios/Podfile ios/vendor/bundle package.json node_modules
 	$(call check-program, bundle)
-	cd ios && bundle exec pod install $(if $(filter-out $(CI), true),--repo-update)
+	cd ios && bundle exec pod install --repo-update
 	touch $@
 
 ios/Berty.xcodeproj: ios/vendor/xcodegen $(xcodegen_yml) $(call rwildcard,ios/Berty/Source,*) $(call rwildcard,assets,*)
@@ -392,9 +436,9 @@ ios/Berty.xcodeproj: ios/vendor/xcodegen $(xcodegen_yml) $(call rwildcard,ios/Be
 	touch $@
 
 ios/vendor/xcodegen: ios/XcodeGen.version
-	$(call check-program, wget unzip)
+	$(call check-program, curl unzip)
 	mkdir -p $(TMP)/xcodegen_dl
-	wget https://github.com/yonaskolb/XcodeGen/archive/$(xcodegen_ver).zip -O $(TMP)/xcodegen_dl/xcodegen.zip
+	curl -L https://github.com/yonaskolb/XcodeGen/archive/$(xcodegen_ver).zip > $(TMP)/xcodegen_dl/xcodegen.zip
 	unzip $(TMP)/xcodegen_dl/xcodegen.zip -d $(TMP)/xcodegen_dl
 	mkdir -p $@
 	cp -rf $(TMP)/xcodegen_dl/*/* $@
@@ -421,6 +465,7 @@ android/libs/gobridge.aar: $(bridge_src)
 		-androidapi $(minimum_android_ver) \
 		./go/framework/bertybridge
 	touch $@
+	cd .. && $(GO) mod tidy
 
 #### React
 
@@ -428,3 +473,20 @@ node_modules: package.json
 	$(call check-program, yarn)
 	yarn $(if $(filter $(CI), true), --frozen-lockfile --network-timeout 1200000 --network-concurrency 1)
 	touch $@
+
+web/node_modules: node_modules web/package.json
+	$(call check-program, yarn)
+	cd web && yarn $(if $(filter $(CI), true), --frozen-lockfile --network-timeout 1200000 --network-concurrency 1)
+	touch $@
+
+### Electron
+
+.PHONY: electron.mac
+electron.mac: web/node_modules
+	cd ../go && $(MAKE) install
+	rm -rf ./web/resources/mac/berty
+	mkdir -p ./web/resources/mac/
+	ln `$(GO) env GOPATH`/bin/berty ./web/resources/mac/berty
+	cd ./web && yarn install
+	cd ./web && yarn build
+	cd ./web && yarn run dist:mac -- -c.buildVersion=$(shell echo -n $(shell git rev-list HEAD | wc -l)) -c.extraMetadata.version=$(VERSION)

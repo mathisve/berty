@@ -1,11 +1,11 @@
 import React from 'react'
 import { View, ScrollView } from 'react-native'
 import { Layout } from '@ui-kitten/components'
-import { useTranslation } from 'react-i18next'
-import { HeaderSettings } from '../shared-components/Header'
 import { WebView } from 'react-native-webview'
-import { useStyles } from '@berty-tech/styles'
-import { ScreenProps, useNavigation } from '@berty-tech/navigation'
+
+import { useStyles } from '@berty/styles'
+import { ScreenFC } from '@berty/navigation'
+import { useThemeColor } from '@berty/store'
 
 //
 // IpfsWebUI
@@ -24,19 +24,12 @@ const BodyIpfsWebUI: React.FC<{}> = () => {
 	)
 }
 
-export const IpfsWebUI: React.FC<ScreenProps.Settings.IpfsWebUI> = () => {
-	const { t } = useTranslation()
-	const { goBack } = useNavigation()
-	const [{ background, flex, color, padding }] = useStyles()
+export const IpfsWebUI: ScreenFC<'Settings.IpfsWebUI'> = () => {
+	const colors = useThemeColor()
 
 	return (
-		<Layout style={[background.white, flex.tiny]}>
-			<ScrollView bounces={false} contentContainerStyle={padding.bottom.scale(90)}>
-				<HeaderSettings
-					title={t('settings.ipfs-webui.title')}
-					bgColor={color.dark.grey}
-					undo={goBack}
-				/>
+		<Layout style={{ flex: 1, backgroundColor: colors['main-background'] }}>
+			<ScrollView bounces={false}>
 				<BodyIpfsWebUI />
 			</ScrollView>
 		</Layout>

@@ -1,32 +1,65 @@
 import React from 'react'
-import { Text, TextStyle, TouchableOpacity, ViewStyle } from 'react-native'
+import { TextStyle, TouchableOpacity, ViewStyle } from 'react-native'
 
-import { useStyles } from '@berty-tech/styles'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store/hooks'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const Button: React.FC<{
-	children: string
 	onPress: () => void
-	style?: ViewStyle
-	textStyle?: TextStyle
-}> = ({ children, onPress, style = null, textStyle = null }) => {
-	const [{ margin, padding, text, border }] = useStyles()
+	width?: number
+	status?: 'primary' | 'secondary'
+	disabled?: boolean
+	style?: ViewStyle | ViewStyle[]
+	textStyle?: TextStyle | TextStyle[]
+}> = ({
+	children,
+	onPress,
+	width = 250,
+	status = 'primary',
+	style = null,
+	disabled,
+	textStyle,
+}) => {
+	const [{ margin, padding, text, border, column }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+
+	const getBackgroundColor = () => {
+		if (disabled) {
+			return colors['secondary-text']
+		}
+		return status === 'primary' ? colors['background-header'] : `${colors['background-header']}20`
+	}
 	return (
 		<TouchableOpacity
+			disabled={disabled}
 			style={[
-				padding.horizontal.big,
-				margin.top.medium,
+				margin.top.small,
 				padding.medium,
 				border.radius.small,
-				{ backgroundColor: '#CED2FF' },
+				column.item.center,
 				style,
+				{
+					width: width * scaleSize,
+					backgroundColor: getBackgroundColor(),
+				},
 			]}
 			onPress={onPress}
 		>
-			<Text
-				style={[text.size.medium, text.color.blue, text.align.center, text.bold.medium, textStyle]}
+			<UnifiedText
+				style={[
+					text.align.center,
+					text.bold,
+					{
+						color:
+							status === 'primary' ? colors['reverted-main-text'] : colors['background-header'],
+						textTransform: 'uppercase',
+					},
+					textStyle,
+				]}
 			>
 				{children}
-			</Text>
+			</UnifiedText>
 		</TouchableOpacity>
 	)
 }

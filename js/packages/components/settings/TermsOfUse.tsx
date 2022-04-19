@@ -1,10 +1,11 @@
 import React from 'react'
 import { View, ScrollView } from 'react-native'
-import { Layout, Text } from '@ui-kitten/components'
-import { useStyles } from '@berty-tech/styles'
-import { HeaderSettings } from '../shared-components/Header'
-import { useNavigation } from '@berty-tech/navigation'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
+import { Layout } from '@ui-kitten/components'
+
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store/hooks'
+import { ScreenFC } from '@berty/navigation'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 //
 // TermsOfUse
@@ -16,22 +17,12 @@ type BodyTermsOfUseItemProps = {
 	title?: string
 }
 
-// Styles
-const useStylesTermsOfUse = () => {
-	const [{ text }] = useStyles()
-	return {
-		itemTitleText: text.size.medium,
-		itemText: text.size.small,
-	}
-}
-
 const BodyTermsOfUseItem: React.FC<BodyTermsOfUseItemProps> = ({ textProps, title = null }) => {
-	const _styles = useStylesTermsOfUse()
 	const [{ margin, text }] = useStyles()
 	return (
 		<View style={[margin.top.big]}>
-			{title && <Text style={[text.bold.medium, _styles.itemTitleText]}>{title}</Text>}
-			<Text style={[_styles.itemText]}>{textProps}</Text>
+			{title && <UnifiedText style={[text.bold]}>{title}</UnifiedText>}
+			<UnifiedText style={[text.size.small]}>{textProps}</UnifiedText>
 		</View>
 	)
 }
@@ -82,21 +73,14 @@ const BodyTermsOfUse: React.FC<{}> = () => {
 	)
 }
 
-export const TermsOfUse: React.FC<{}> = () => {
-	const [{ flex, background, padding }] = useStyles()
-	const { goBack } = useNavigation()
+export const TermsOfUse: ScreenFC<'Settings.TermsOfUse'> = () => {
+	const colors = useThemeColor()
+
 	return (
-		<Layout style={[flex.tiny, background.white]}>
-			<SwipeNavRecognizer>
-				<ScrollView bounces={false} contentContainerStyle={padding.bottom.huge}>
-					<HeaderSettings
-						title='Terms of use'
-						desc='Last updated: August 29th 2019'
-						undo={goBack}
-					/>
-					<BodyTermsOfUse />
-				</ScrollView>
-			</SwipeNavRecognizer>
+		<Layout style={{ backgroundColor: colors['main-background'], flex: 1 }}>
+			<ScrollView bounces={false}>
+				<BodyTermsOfUse />
+			</ScrollView>
 		</Layout>
 	)
 }

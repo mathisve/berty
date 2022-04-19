@@ -6,8 +6,11 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 const metricsHandler = "/metrics"
@@ -41,8 +44,8 @@ func (m *Manager) getMetricsRegistry() (*prometheus.Registry, error) {
 		m.Metrics.registry = prometheus.NewRegistry()
 	}
 
-	m.Metrics.registry.MustRegister(prometheus.NewBuildInfoCollector())
-	m.Metrics.registry.MustRegister(prometheus.NewGoCollector())
+	m.Metrics.registry.MustRegister(collectors.NewBuildInfoCollector())
+	m.Metrics.registry.MustRegister(collectors.NewGoCollector())
 
 	mux := http.NewServeMux()
 	var l net.Listener
@@ -62,7 +65,7 @@ func (m *Manager) getMetricsRegistry() (*prometheus.Registry, error) {
 		mux.Handle(metricsHandler, handerfor)
 		logger.Info("metrics listener",
 			zap.String("handler", metricsHandler),
-			zap.String("listener", l.Addr().String()))
+			logutil.PrivateString("listener", l.Addr().String()))
 
 		return http.Serve(l, mux)
 	}, func(error) {

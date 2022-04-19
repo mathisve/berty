@@ -1,20 +1,18 @@
-import React, { useEffect, useMemo } from 'react'
-import { SectionList, Text as TextNative, TouchableHighlight, View } from 'react-native'
-import { Icon, Text } from '@ui-kitten/components'
-import { CommonActions } from '@react-navigation/native'
-
-import { Routes, useNavigation } from '@berty-tech/navigation'
-import { useStyles } from '@berty-tech/styles'
-import { useConversation, useContact, useConvInteractions } from '@berty-tech/store/hooks'
-import beapi from '@berty-tech/api'
-
-import { pbDateToNum, timeFormat } from '../../helpers'
-import { ContactAvatar, ConversationAvatar } from '../../avatars'
+import React, { useMemo } from 'react'
+import { SectionList, TouchableHighlight, View } from 'react-native'
 import { EdgeInsets } from 'react-native-safe-area-context'
-import { Translation } from 'react-i18next'
-import { HintBody } from '@berty-tech/components/shared-components'
-import { parseInteraction } from '@berty-tech/store/utils'
-import { ParsedInteraction } from '@berty-tech/store/types.gen'
+import { useTranslation } from 'react-i18next'
+
+import beapi from '@berty/api'
+import { useNavigation } from '@berty/navigation'
+import { useStyles } from '@berty/styles'
+import { useThemeColor, parseInteraction, pbDateToNum, ParsedInteraction } from '@berty/store'
+import { useContact, useConversationInteractions, useConversation } from '@berty/hooks'
+
+import { HintBody } from '../../shared-components'
+import { timeFormat } from '../../helpers'
+import { ContactAvatar, ConversationAvatar } from '../../avatars'
+import { UnifiedText } from '../../shared-components/UnifiedText'
 
 // Styles
 
@@ -22,16 +20,20 @@ const _resultAvatarSize = 45
 
 const useStylesSearch = () => {
 	const [{ text, background }] = useStyles()
+	const colors = useThemeColor()
 
 	return {
 		searchResultHighlightText: [
 			text.size.small,
-			text.color.yellow,
 			background.light.yellow,
-			text.bold.medium,
+			text.bold,
+			{ color: colors['secondary-text'], backgroundColor: `${colors['secondary-text']}30` },
 		],
-		nameHighlightText: [text.color.yellow, background.light.yellow, text.bold.medium],
-		plainMessageText: [text.size.small, text.color.grey],
+		nameHighlightText: [
+			text.bold,
+			{ color: colors['secondary-text'], backgroundColor: `${colors['secondary-text']}30` },
+		],
+		plainMessageText: [text.size.small, { color: colors['secondary-text'] }],
 	}
 }
 
@@ -70,16 +72,16 @@ const MessageSearchResult: React.FC<{
 			if (lastStart < i) {
 				const plainPart = message.substr(lastStart, i - lastStart)
 				parts[partsCounter] = (
-					<Text key={partsCounter} style={style}>
+					<UnifiedText key={partsCounter} style={style}>
 						{plainPart}
-					</Text>
+					</UnifiedText>
 				)
 				partsCounter++
 			}
 			parts[partsCounter] = (
-				<Text key={partsCounter} style={highlightStyle}>
+				<UnifiedText key={partsCounter} style={highlightStyle}>
 					{searchTarget}
-				</Text>
+				</UnifiedText>
 			)
 			partsCounter++
 			i += searchText.length
@@ -91,9 +93,9 @@ const MessageSearchResult: React.FC<{
 	if (lastStart !== message.length) {
 		const plainPart = message.substr(lastStart)
 		parts[partsCounter] = (
-			<Text key={partsCounter} style={style}>
+			<UnifiedText key={partsCounter} style={style}>
 				{plainPart}
-			</Text>
+			</UnifiedText>
 		)
 		lastStart = message.length
 		partsCounter++
@@ -105,7 +107,7 @@ const MessageSearchResult: React.FC<{
 const SearchResultItem: React.FC<SearchItemProps> = ({ data, kind, searchText = '' }) => {
 	const [{ color, row, padding, flex, column, text, margin, border }] = useStyles()
 	const { plainMessageText, searchResultHighlightText, nameHighlightText } = useStylesSearch()
-	const { navigate, dispatch } = useNavigation()
+	const { navigate } = useNavigation()
 
 	let convPk: string
 	switch (kind) {
@@ -135,25 +137,25 @@ const SearchResultItem: React.FC<SearchItemProps> = ({ data, kind, searchText = 
 	}
 	const contact = useContact(contactPk)
 
-	const interactions = useConvInteractions(conv?.publicKey).filter(
-		(inte) => inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage,
+	const interactions = useConversationInteractions(conv?.publicKey || '').filter(
+		inte => inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage,
 	)
 	const lastInteraction =
 		interactions && interactions.length > 0 ? interactions[interactions.length - 1] : null
 
 	let name: string
-	let inte: beapi.messenger.IInteraction | ParsedInteraction | null
+	let inte: ParsedInteraction | undefined
 	let avatar: JSX.Element
 	switch (kind) {
 		case SearchResultKind.Contact:
 			avatar = <ContactAvatar publicKey={contactPk} size={_resultAvatarSize} />
 			name = data.displayName || ''
-			inte = lastInteraction || null
+			inte = lastInteraction || undefined
 			break
 		case SearchResultKind.Conversation:
 			avatar = <ConversationAvatar publicKey={convPk} size={_resultAvatarSize} />
 			name = data.displayName || ''
-			inte = lastInteraction || null
+			inte = lastInteraction || undefined
 			break
 		case SearchResultKind.Interaction:
 			if (conv?.type === beapi.messenger.Conversation.Type.ContactType) {
@@ -163,15 +165,13 @@ const SearchResultItem: React.FC<SearchItemProps> = ({ data, kind, searchText = 
 				name = conv?.displayName || ''
 				avatar = <ConversationAvatar publicKey={convPk} size={_resultAvatarSize} />
 			}
-			inte = data || null
-			if (inte !== null) {
+			if (data !== null) {
 				try {
-					inte = parseInteraction(inte as beapi.messenger.Interaction)
+					inte = parseInteraction(data)
 				} catch (e) {
 					console.warn(e)
 				}
 			}
-
 			console.log(data)
 			break
 		default:
@@ -195,17 +195,24 @@ const SearchResultItem: React.FC<SearchItemProps> = ({ data, kind, searchText = 
 						content = '📫 Outgoing request sent'
 						break
 					default:
-						content = (inte?.payload as any)?.body
+						if (inte?.type === beapi.messenger.AppMessage.Type.TypeUserMessage) {
+							content = inte.payload?.body
+						}
 				}
 				break
 			case SearchResultKind.Conversation:
-				content = (inte?.payload as any)?.body
+				if (inte?.type === beapi.messenger.AppMessage.Type.TypeUserMessage) {
+					content = inte.payload?.body
+				}
 				break
 			case SearchResultKind.Interaction:
+				const message =
+					(inte?.type === beapi.messenger.AppMessage.Type.TypeUserMessage && inte.payload?.body) ||
+					''
 				content = (
 					<MessageSearchResult
 						searchText={searchText}
-						message={(inte?.payload as any)?.body}
+						message={message}
 						style={plainMessageText}
 						highlightStyle={searchResultHighlightText}
 					/>
@@ -215,58 +222,58 @@ const SearchResultItem: React.FC<SearchItemProps> = ({ data, kind, searchText = 
 				return null
 		}
 		return (
-			<Text numberOfLines={1} style={plainMessageText}>
-				{content}
-			</Text>
+			<UnifiedText numberOfLines={1} style={plainMessageText}>
+				<>{content}</>
+			</UnifiedText>
 		)
 	}
 
 	const TimeStamp = () => {
 		return (
-			<Text style={[padding.left.small, text.size.small, text.color.grey]}>
+			<UnifiedText style={[padding.left.small, text.size.small, text.color.grey]}>
 				{timeFormat.fmtTimestamp1(date)}
-			</Text>
+			</UnifiedText>
 		)
 	}
 
 	return (
 		<TouchableHighlight
 			underlayColor={!conv ? 'transparent' : color.light.grey}
-			onPress={() =>
-				!conv
-					? data.state === beapi.messenger.Contact.State.IncomingRequest
-						? navigate.main.contactRequest({ contactId: data.publicKey })
-						: null
-					: dispatch(
-							CommonActions.navigate({
-								name:
-									conv.type === beapi.messenger.Conversation.Type.ContactType
-										? Routes.Chat.OneToOne
-										: Routes.Chat.Group,
-								params: {
-									convId: convPk,
-									scrollToMessage: kind === SearchResultKind.Interaction && inte ? inte.cid : null,
-								},
-							}),
-					  )
-			}
+			onPress={() => {
+				if (!conv) {
+					if (data.state === beapi.messenger.Contact.State.IncomingRequest) {
+						navigate('Main.ContactRequest', { contactId: data.publicKey })
+					}
+					return
+				}
+				navigate({
+					name:
+						conv.type === beapi.messenger.Conversation.Type.ContactType
+							? 'Chat.OneToOne'
+							: 'Chat.Group',
+					params: {
+						convId: convPk,
+						scrollToMessage: kind === SearchResultKind.Interaction && inte ? inte.cid : null,
+					},
+				})
+			}}
 		>
 			<View style={[row.center, padding.medium, border.bottom.tiny, border.color.light.grey]}>
 				{avatar}
 				<View style={[flex.medium, column.justify, padding.left.medium]}>
 					<View style={[margin.right.big]}>
-						<Text numberOfLines={1} style={[column.item.fill, text.bold.medium]}>
+						<UnifiedText numberOfLines={1} style={[column.item.fill, text.bold]}>
 							{kind === SearchResultKind.Interaction ? (
 								name
 							) : (
 								<MessageSearchResult
 									message={name}
 									searchText={searchText}
-									style={[text.bold.medium]}
+									style={[text.bold]}
 									highlightStyle={nameHighlightText}
 								/>
 							)}
-						</Text>
+						</UnifiedText>
 						<MessageDisplay />
 					</View>
 				</View>
@@ -334,10 +341,9 @@ export const SearchComponent: React.FC<{
 	value,
 	earliestInteractionCID: _earliestInteractionCID,
 }) => {
-	const [
-		{ height, width, background, padding, text, border, margin },
-		{ scaleHeight },
-	] = useStyles()
+	const [{ height, width, padding, text, border, margin }] = useStyles()
+	const colors = useThemeColor()
+	const { t } = useTranslation()
 	const validInsets = useMemo(() => insets || { top: 0, bottom: 0, left: 0, right: 0 }, [insets])
 
 	const sortedConversations = useMemo(() => {
@@ -350,10 +356,6 @@ export const SearchComponent: React.FC<{
 		() => createSections(sortedConversations, Object.values(contacts), interactions, value),
 		[contacts, sortedConversations, interactions, value],
 	)
-
-	useEffect(() => {
-		console.log(value, hasResults)
-	})
 
 	return hasResults ? (
 		<SectionList
@@ -387,10 +389,11 @@ export const SearchComponent: React.FC<{
 					<View
 						style={[
 							!isFirst && border.radius.top.big,
-							background.white,
+							{ backgroundColor: colors['main-background'] },
 							!isFirst && {
 								shadowOpacity: 0.1,
 								shadowRadius: 8,
+								shadowColor: colors.shadow,
 								shadowOffset: { width: 0, height: -12 },
 							},
 						]}
@@ -398,19 +401,15 @@ export const SearchComponent: React.FC<{
 						<View style={[padding.horizontal.medium]}>
 							<View style={{ flexDirection: 'row', justifyContent: 'center' }}>
 								<View
-									style={[width(42), height(4), margin.top.medium, { backgroundColor: '#F1F4F6' }]}
+									style={[
+										width(42),
+										height(4),
+										margin.top.medium,
+										{ backgroundColor: `${colors['negative-asset']}30` },
+									]}
 								/>
 							</View>
-							<TextNative
-								style={[
-									text.size.scale(25),
-									text.color.black,
-									text.bold.medium,
-									{ fontFamily: 'Open Sans' },
-								]}
-							>
-								{title}
-							</TextNative>
+							<UnifiedText style={[text.size.scale(25), text.bold]}>{title}</UnifiedText>
 						</View>
 					</View>
 				) : null
@@ -425,38 +424,12 @@ export const SearchComponent: React.FC<{
 		/>
 	) : (
 		<View style={{ position: 'relative' }}>
-			<Translation>
-				{(t: any): React.ReactNode => (
-					<TextNative
-						style={[
-							text.color.black,
-							text.size.big,
-							text.bold.small,
-							text.align.center,
-							{
-								fontFamily: 'Open Sans',
-								position: 'absolute',
-								top: 230,
-								left: 0,
-								right: 0,
-								color: '#FFAE3A',
-							},
-						]}
-					>
-						{t('main.home.search.no-results')}
-					</TextNative>
-				)}
-			</Translation>
-			<Icon
-				name='search'
-				width={500}
-				height={500}
-				fill='#FFFBF6'
-				style={{ position: 'absolute', top: 0, right: -63 }}
-			/>
-			<View style={[margin.top.scale(370 * scaleHeight)]}>
+			<View style={[margin.top.scale(60)]}>
 				<HintBody />
 			</View>
+			<UnifiedText style={[margin.top.scale(60), text.size.big, text.light, text.align.center]}>
+				{t('main.home.search.no-results')}
+			</UnifiedText>
 		</View>
 	)
 }

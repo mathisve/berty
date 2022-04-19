@@ -35,6 +35,8 @@
     - [AttachmentRetrieve](#berty.protocol.v1.AttachmentRetrieve)
     - [AttachmentRetrieve.Reply](#berty.protocol.v1.AttachmentRetrieve.Reply)
     - [AttachmentRetrieve.Request](#berty.protocol.v1.AttachmentRetrieve.Request)
+    - [AuthExchangeResponse](#berty.protocol.v1.AuthExchangeResponse)
+    - [AuthExchangeResponse.ServicesEntry](#berty.protocol.v1.AuthExchangeResponse.ServicesEntry)
     - [AuthServiceCompleteFlow](#berty.protocol.v1.AuthServiceCompleteFlow)
     - [AuthServiceCompleteFlow.Reply](#berty.protocol.v1.AuthServiceCompleteFlow.Reply)
     - [AuthServiceCompleteFlow.Request](#berty.protocol.v1.AuthServiceCompleteFlow.Request)
@@ -75,6 +77,9 @@
     - [DeactivateGroup](#berty.protocol.v1.DeactivateGroup)
     - [DeactivateGroup.Reply](#berty.protocol.v1.DeactivateGroup.Reply)
     - [DeactivateGroup.Request](#berty.protocol.v1.DeactivateGroup.Request)
+    - [DebugAuthServiceSetToken](#berty.protocol.v1.DebugAuthServiceSetToken)
+    - [DebugAuthServiceSetToken.Reply](#berty.protocol.v1.DebugAuthServiceSetToken.Reply)
+    - [DebugAuthServiceSetToken.Request](#berty.protocol.v1.DebugAuthServiceSetToken.Request)
     - [DebugGroup](#berty.protocol.v1.DebugGroup)
     - [DebugGroup.Reply](#berty.protocol.v1.DebugGroup.Reply)
     - [DebugGroup.Request](#berty.protocol.v1.DebugGroup.Request)
@@ -87,6 +92,7 @@
     - [DeviceSecret](#berty.protocol.v1.DeviceSecret)
     - [EncryptedMessage](#berty.protocol.v1.EncryptedMessage)
     - [EventContext](#berty.protocol.v1.EventContext)
+    - [FirstLastCounters](#berty.protocol.v1.FirstLastCounters)
     - [Group](#berty.protocol.v1.Group)
     - [GroupAddAdditionalRendezvousSeed](#berty.protocol.v1.GroupAddAdditionalRendezvousSeed)
     - [GroupAddDeviceSecret](#berty.protocol.v1.GroupAddDeviceSecret)
@@ -111,6 +117,7 @@
     - [InstanceGetConfiguration](#berty.protocol.v1.InstanceGetConfiguration)
     - [InstanceGetConfiguration.Reply](#berty.protocol.v1.InstanceGetConfiguration.Reply)
     - [InstanceGetConfiguration.Request](#berty.protocol.v1.InstanceGetConfiguration.Request)
+    - [MemberWithDevices](#berty.protocol.v1.MemberWithDevices)
     - [MessageEnvelope](#berty.protocol.v1.MessageEnvelope)
     - [MessageHeaders](#berty.protocol.v1.MessageHeaders)
     - [MessageHeaders.MetadataEntry](#berty.protocol.v1.MessageHeaders.MetadataEntry)
@@ -143,6 +150,9 @@
     - [MultiMemberGroupLeave.Reply](#berty.protocol.v1.MultiMemberGroupLeave.Reply)
     - [MultiMemberGroupLeave.Request](#berty.protocol.v1.MultiMemberGroupLeave.Request)
     - [MultiMemberInitialMember](#berty.protocol.v1.MultiMemberInitialMember)
+    - [OrbitDBMessageHeads](#berty.protocol.v1.OrbitDBMessageHeads)
+    - [OrbitDBMessageHeads.Box](#berty.protocol.v1.OrbitDBMessageHeads.Box)
+    - [OutOfStoreMessage](#berty.protocol.v1.OutOfStoreMessage)
     - [PeerList](#berty.protocol.v1.PeerList)
     - [PeerList.Peer](#berty.protocol.v1.PeerList.Peer)
     - [PeerList.Reply](#berty.protocol.v1.PeerList.Reply)
@@ -151,6 +161,26 @@
     - [PeerList.Stream](#berty.protocol.v1.PeerList.Stream)
     - [Progress](#berty.protocol.v1.Progress)
     - [ProtocolMetadata](#berty.protocol.v1.ProtocolMetadata)
+    - [PushDeviceServerRegistered](#berty.protocol.v1.PushDeviceServerRegistered)
+    - [PushDeviceTokenRegistered](#berty.protocol.v1.PushDeviceTokenRegistered)
+    - [PushMemberTokenUpdate](#berty.protocol.v1.PushMemberTokenUpdate)
+    - [PushReceive](#berty.protocol.v1.PushReceive)
+    - [PushReceive.Reply](#berty.protocol.v1.PushReceive.Reply)
+    - [PushReceive.Request](#berty.protocol.v1.PushReceive.Request)
+    - [PushSend](#berty.protocol.v1.PushSend)
+    - [PushSend.Reply](#berty.protocol.v1.PushSend.Reply)
+    - [PushSend.Request](#berty.protocol.v1.PushSend.Request)
+    - [PushServer](#berty.protocol.v1.PushServer)
+    - [PushServiceReceiver](#berty.protocol.v1.PushServiceReceiver)
+    - [PushSetDeviceToken](#berty.protocol.v1.PushSetDeviceToken)
+    - [PushSetDeviceToken.Reply](#berty.protocol.v1.PushSetDeviceToken.Reply)
+    - [PushSetDeviceToken.Request](#berty.protocol.v1.PushSetDeviceToken.Request)
+    - [PushSetServer](#berty.protocol.v1.PushSetServer)
+    - [PushSetServer.Reply](#berty.protocol.v1.PushSetServer.Reply)
+    - [PushSetServer.Request](#berty.protocol.v1.PushSetServer.Request)
+    - [PushShareToken](#berty.protocol.v1.PushShareToken)
+    - [PushShareToken.Reply](#berty.protocol.v1.PushShareToken.Reply)
+    - [PushShareToken.Request](#berty.protocol.v1.PushShareToken.Request)
     - [ReplicationServiceRegisterGroup](#berty.protocol.v1.ReplicationServiceRegisterGroup)
     - [ReplicationServiceRegisterGroup.Reply](#berty.protocol.v1.ReplicationServiceRegisterGroup.Reply)
     - [ReplicationServiceRegisterGroup.Request](#berty.protocol.v1.ReplicationServiceRegisterGroup.Request)
@@ -407,6 +437,10 @@ AppMetadata is an app defined message, accessible to future group members
 
 ### AppMetadataSend.Reply
 
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| cid | [bytes](#bytes) |  |  |
+
 <a name="berty.protocol.v1.AppMetadataSend.Request"></a>
 
 ### AppMetadataSend.Request
@@ -457,6 +491,27 @@ AppMetadata is an app defined message, accessible to future group members
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | attachment_cid | [bytes](#bytes) |  | attachment_cid is the cid of the (encrypted) file |
+
+<a name="berty.protocol.v1.AuthExchangeResponse"></a>
+
+### AuthExchangeResponse
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| access_token | [string](#string) |  |  |
+| scope | [string](#string) |  |  |
+| error | [string](#string) |  |  |
+| error_description | [string](#string) |  |  |
+| services | [AuthExchangeResponse.ServicesEntry](#berty.protocol.v1.AuthExchangeResponse.ServicesEntry) | repeated |  |
+
+<a name="berty.protocol.v1.AuthExchangeResponse.ServicesEntry"></a>
+
+### AuthExchangeResponse.ServicesEntry
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [string](#string) |  |  |
 
 <a name="berty.protocol.v1.AuthServiceCompleteFlow"></a>
 
@@ -683,6 +738,23 @@ ContactAddAliasKey is an event type where ones shares their alias public key
 | ----- | ---- | ----- | ----------- |
 | group_pk | [bytes](#bytes) |  | group_pk is the identifier of the group |
 
+<a name="berty.protocol.v1.DebugAuthServiceSetToken"></a>
+
+### DebugAuthServiceSetToken
+
+<a name="berty.protocol.v1.DebugAuthServiceSetToken.Reply"></a>
+
+### DebugAuthServiceSetToken.Reply
+
+<a name="berty.protocol.v1.DebugAuthServiceSetToken.Request"></a>
+
+### DebugAuthServiceSetToken.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| token | [AuthExchangeResponse](#berty.protocol.v1.AuthExchangeResponse) |  |  |
+| authentication_url | [string](#string) |  |  |
+
 <a name="berty.protocol.v1.DebugGroup"></a>
 
 ### DebugGroup
@@ -778,6 +850,15 @@ EventContext adds context (its id, its parents and its attachments) to an event
 | group_pk | [bytes](#bytes) |  | group_pk receiving the event |
 | attachment_cids | [bytes](#bytes) | repeated | attachment_cids is a list of attachment that can be retrieved |
 
+<a name="berty.protocol.v1.FirstLastCounters"></a>
+
+### FirstLastCounters
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| first | [uint64](#uint64) |  |  |
+| last | [uint64](#uint64) |  |  |
+
 <a name="berty.protocol.v1.Group"></a>
 
 ### Group
@@ -790,6 +871,8 @@ Group define a group and is enough to invite someone to it
 | secret_sig | [bytes](#bytes) |  | secret_sig is the signature of the secret used to ensure the validity of the group |
 | group_type | [GroupType](#berty.protocol.v1.GroupType) |  | group_type specifies the type of the group, used to determine how device secrets are generated |
 | sign_pub | [bytes](#bytes) |  | sign_pub is the signature public key used to verify entries, not required when secret and secret_sig are provided |
+| link_key | [bytes](#bytes) |  | link_key is the secret key used to exchange group updates and links to attachments, useful for replication services |
+| link_key_sig | [bytes](#bytes) |  | link_key_sig is the signature of the link_key using the group private key |
 
 <a name="berty.protocol.v1.GroupAddAdditionalRendezvousSeed"></a>
 
@@ -847,6 +930,7 @@ GroupEnvelope is a publicly exposed structure containing a group metadata event
 | sign_pub | [bytes](#bytes) |  | sign_pub is the signature public key used to verify entries |
 | metadata_heads_cids | [bytes](#bytes) | repeated | metadata_heads_cids are the heads of the metadata store that should be restored from an export |
 | messages_heads_cids | [bytes](#bytes) | repeated | messages_heads_cids are the heads of the metadata store that should be restored from an export |
+| link_key | [bytes](#bytes) |  | link_key |
 
 <a name="berty.protocol.v1.GroupInfo"></a>
 
@@ -992,10 +1076,21 @@ GroupRemoveAdditionalRendezvousSeed indicates that a previously added rendezvous
 | wifi_p2p_enabled | [InstanceGetConfiguration.SettingState](#berty.protocol.v1.InstanceGetConfiguration.SettingState) |  | MultiPeerConnectivity for Darwin and Nearby for Android |
 | mdns_enabled | [InstanceGetConfiguration.SettingState](#berty.protocol.v1.InstanceGetConfiguration.SettingState) |  |  |
 | relay_enabled | [InstanceGetConfiguration.SettingState](#berty.protocol.v1.InstanceGetConfiguration.SettingState) |  |  |
+| device_push_token | [PushServiceReceiver](#berty.protocol.v1.PushServiceReceiver) |  |  |
+| device_push_server | [PushServer](#berty.protocol.v1.PushServer) |  |  |
 
 <a name="berty.protocol.v1.InstanceGetConfiguration.Request"></a>
 
 ### InstanceGetConfiguration.Request
+
+<a name="berty.protocol.v1.MemberWithDevices"></a>
+
+### MemberWithDevices
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| member_pk | [bytes](#bytes) |  |  |
+| devices_pks | [bytes](#bytes) | repeated |  |
 
 <a name="berty.protocol.v1.MessageEnvelope"></a>
 
@@ -1237,6 +1332,39 @@ MultiMemberInitialMember indicates that a member is the group creator, this even
 | ----- | ---- | ----- | ----------- |
 | member_pk | [bytes](#bytes) |  | member_pk is the public key of the member who is the group creator |
 
+<a name="berty.protocol.v1.OrbitDBMessageHeads"></a>
+
+### OrbitDBMessageHeads
+OrbitDBMessageHeads is the payload sent on orbitdb to share peer&#39;s heads
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sealed_box | [bytes](#bytes) |  | sealed box should contain encrypted Box |
+| raw_rotation | [bytes](#bytes) |  | current topic used |
+
+<a name="berty.protocol.v1.OrbitDBMessageHeads.Box"></a>
+
+### OrbitDBMessageHeads.Box
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| address | [string](#string) |  |  |
+| heads | [bytes](#bytes) |  |  |
+
+<a name="berty.protocol.v1.OutOfStoreMessage"></a>
+
+### OutOfStoreMessage
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| cid | [bytes](#bytes) |  |  |
+| device_pk | [bytes](#bytes) |  |  |
+| counter | [fixed64](#fixed64) |  |  |
+| sig | [bytes](#bytes) |  |  |
+| flags | [fixed32](#fixed32) |  |  |
+| encrypted_payload | [bytes](#bytes) |  |  |
+| nonce | [bytes](#bytes) |  |  |
+
 <a name="berty.protocol.v1.PeerList"></a>
 
 ### PeerList
@@ -1308,6 +1436,149 @@ Progress define a generic object that can be used to display a progress bar for 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | attachments_secrets | [bytes](#bytes) | repeated | attachments_secrets is a list of secret keys used retrieve attachments |
+
+<a name="berty.protocol.v1.PushDeviceServerRegistered"></a>
+
+### PushDeviceServerRegistered
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| server | [PushServer](#berty.protocol.v1.PushServer) |  |  |
+| device_pk | [bytes](#bytes) |  | device_pk is the public key of the device sending the message |
+
+<a name="berty.protocol.v1.PushDeviceTokenRegistered"></a>
+
+### PushDeviceTokenRegistered
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| token | [PushServiceReceiver](#berty.protocol.v1.PushServiceReceiver) |  |  |
+| device_pk | [bytes](#bytes) |  | device_pk is the public key of the device sending the message |
+
+<a name="berty.protocol.v1.PushMemberTokenUpdate"></a>
+
+### PushMemberTokenUpdate
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| server | [PushServer](#berty.protocol.v1.PushServer) |  |  |
+| token | [bytes](#bytes) |  |  |
+| device_pk | [bytes](#bytes) |  | device_pk is the public key of the device sending the message |
+
+<a name="berty.protocol.v1.PushReceive"></a>
+
+### PushReceive
+
+<a name="berty.protocol.v1.PushReceive.Reply"></a>
+
+### PushReceive.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| message | [OutOfStoreMessage](#berty.protocol.v1.OutOfStoreMessage) |  |  |
+| cleartext | [bytes](#bytes) |  |  |
+| group_public_key | [bytes](#bytes) |  |  |
+| already_received | [bool](#bool) |  |  |
+
+<a name="berty.protocol.v1.PushReceive.Request"></a>
+
+### PushReceive.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| payload | [bytes](#bytes) |  |  |
+
+<a name="berty.protocol.v1.PushSend"></a>
+
+### PushSend
+
+<a name="berty.protocol.v1.PushSend.Reply"></a>
+
+### PushSend.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| group_members | [MemberWithDevices](#berty.protocol.v1.MemberWithDevices) | repeated |  |
+
+<a name="berty.protocol.v1.PushSend.Request"></a>
+
+### PushSend.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| cid | [bytes](#bytes) |  |  |
+| group_public_key | [bytes](#bytes) |  |  |
+| group_members | [MemberWithDevices](#berty.protocol.v1.MemberWithDevices) | repeated |  |
+
+<a name="berty.protocol.v1.PushServer"></a>
+
+### PushServer
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| server_key | [bytes](#bytes) |  |  |
+| service_addr | [string](#string) |  |  |
+
+<a name="berty.protocol.v1.PushServiceReceiver"></a>
+
+### PushServiceReceiver
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| token_type | [berty.push.v1.PushServiceTokenType](#berty.push.v1.PushServiceTokenType) |  | token_type is the type of the token used, it allows us to act as a proxy to the appropriate push server |
+| bundle_id | [string](#string) |  | bundle_id is the app identifier |
+| token | [bytes](#bytes) |  | token is the device identifier used |
+| recipient_public_key | [bytes](#bytes) |  | recipient_public_key is the public key which will be used to encrypt the payload |
+
+<a name="berty.protocol.v1.PushSetDeviceToken"></a>
+
+### PushSetDeviceToken
+
+<a name="berty.protocol.v1.PushSetDeviceToken.Reply"></a>
+
+### PushSetDeviceToken.Reply
+
+<a name="berty.protocol.v1.PushSetDeviceToken.Request"></a>
+
+### PushSetDeviceToken.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| receiver | [PushServiceReceiver](#berty.protocol.v1.PushServiceReceiver) |  |  |
+
+<a name="berty.protocol.v1.PushSetServer"></a>
+
+### PushSetServer
+
+<a name="berty.protocol.v1.PushSetServer.Reply"></a>
+
+### PushSetServer.Reply
+
+<a name="berty.protocol.v1.PushSetServer.Request"></a>
+
+### PushSetServer.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| server | [PushServer](#berty.protocol.v1.PushServer) |  |  |
+
+<a name="berty.protocol.v1.PushShareToken"></a>
+
+### PushShareToken
+
+<a name="berty.protocol.v1.PushShareToken.Reply"></a>
+
+### PushShareToken.Reply
+
+<a name="berty.protocol.v1.PushShareToken.Request"></a>
+
+### PushShareToken.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| group_pk | [bytes](#bytes) |  |  |
+| server | [PushServer](#berty.protocol.v1.PushServer) |  |  |
+| receiver | [PushServiceReceiver](#berty.protocol.v1.PushServiceReceiver) |  |  |
 
 <a name="berty.protocol.v1.ReplicationServiceRegisterGroup"></a>
 
@@ -1543,6 +1814,9 @@ Progress define a generic object that can be used to display a progress bar for 
 | EventTypeAccountServiceTokenAdded | 401 | EventTypeAccountServiceTokenAdded indicates that a new service provider has been registered for this account |
 | EventTypeAccountServiceTokenRemoved | 402 | EventTypeAccountServiceTokenRemoved indicates that a service provider is not available anymore |
 | EventTypeGroupReplicating | 403 | EventTypeGroupReplicating indicates that the group has been registered for replication on a server |
+| EventTypePushMemberTokenUpdate | 404 | EventTypePushMemberTokenUpdate |
+| EventTypePushDeviceTokenRegistered | 405 | EventTypePushDeviceTokenRegistered |
+| EventTypePushDeviceServerRegistered | 406 | EventTypePushDeviceServerRegistered |
 | EventTypeGroupMetadataPayloadSent | 1001 | EventTypeGroupMetadataPayloadSent indicates the payload includes an app specific event, unlike messages stored on the message store it is encrypted using a static key |
 
 <a name="berty.protocol.v1.GroupType"></a>
@@ -1633,6 +1907,7 @@ Each Berty Protocol Instance is considered as a Berty device and is associated w
 | DebugListGroups | [DebugListGroups.Request](#berty.protocol.v1.DebugListGroups.Request) | [DebugListGroups.Reply](#berty.protocol.v1.DebugListGroups.Reply) stream |  |
 | DebugInspectGroupStore | [DebugInspectGroupStore.Request](#berty.protocol.v1.DebugInspectGroupStore.Request) | [DebugInspectGroupStore.Reply](#berty.protocol.v1.DebugInspectGroupStore.Reply) stream |  |
 | DebugGroup | [DebugGroup.Request](#berty.protocol.v1.DebugGroup.Request) | [DebugGroup.Reply](#berty.protocol.v1.DebugGroup.Reply) |  |
+| DebugAuthServiceSetToken | [DebugAuthServiceSetToken.Request](#berty.protocol.v1.DebugAuthServiceSetToken.Request) | [DebugAuthServiceSetToken.Reply](#berty.protocol.v1.DebugAuthServiceSetToken.Reply) |  |
 | SystemInfo | [SystemInfo.Request](#berty.protocol.v1.SystemInfo.Request) | [SystemInfo.Reply](#berty.protocol.v1.SystemInfo.Reply) |  |
 | AuthServiceInitFlow | [AuthServiceInitFlow.Request](#berty.protocol.v1.AuthServiceInitFlow.Request) | [AuthServiceInitFlow.Reply](#berty.protocol.v1.AuthServiceInitFlow.Reply) | AuthServiceInitFlow Initialize an authentication flow |
 | AuthServiceCompleteFlow | [AuthServiceCompleteFlow.Request](#berty.protocol.v1.AuthServiceCompleteFlow.Request) | [AuthServiceCompleteFlow.Reply](#berty.protocol.v1.AuthServiceCompleteFlow.Reply) | AuthServiceCompleteFlow Completes an authentication flow |
@@ -1641,6 +1916,11 @@ Each Berty Protocol Instance is considered as a Berty device and is associated w
 | PeerList | [PeerList.Request](#berty.protocol.v1.PeerList.Request) | [PeerList.Reply](#berty.protocol.v1.PeerList.Reply) | PeerList returns a list of P2P peers |
 | AttachmentPrepare | [AttachmentPrepare.Request](#berty.protocol.v1.AttachmentPrepare.Request) stream | [AttachmentPrepare.Reply](#berty.protocol.v1.AttachmentPrepare.Reply) | AttachmentPrepare ... |
 | AttachmentRetrieve | [AttachmentRetrieve.Request](#berty.protocol.v1.AttachmentRetrieve.Request) | [AttachmentRetrieve.Reply](#berty.protocol.v1.AttachmentRetrieve.Reply) stream | AttachmentRetrieve returns an attachment data |
+| PushReceive | [PushReceive.Request](#berty.protocol.v1.PushReceive.Request) | [PushReceive.Reply](#berty.protocol.v1.PushReceive.Reply) | PushReceive handles a push payload, decrypts it if possible |
+| PushSend | [PushSend.Request](#berty.protocol.v1.PushSend.Request) | [PushSend.Reply](#berty.protocol.v1.PushSend.Reply) | PushSend sends a push payload to a specified list of group members |
+| PushShareToken | [PushShareToken.Request](#berty.protocol.v1.PushShareToken.Request) | [PushShareToken.Reply](#berty.protocol.v1.PushShareToken.Reply) | PushShareToken sends push tokens of own devices to a group |
+| PushSetDeviceToken | [PushSetDeviceToken.Request](#berty.protocol.v1.PushSetDeviceToken.Request) | [PushSetDeviceToken.Reply](#berty.protocol.v1.PushSetDeviceToken.Reply) | PushSetDeviceToken registers a push token for the current device |
+| PushSetServer | [PushSetServer.Request](#berty.protocol.v1.PushSetServer.Request) | [PushSetServer.Reply](#berty.protocol.v1.PushSetServer.Reply) | PushSetServer registers a push server for the current device |
 
  
 

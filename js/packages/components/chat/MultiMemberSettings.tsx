@@ -1,85 +1,37 @@
-import React, { useState } from 'react'
-import { View, ScrollView, Share, StatusBar, TouchableOpacity } from 'react-native'
-import { Layout, Text } from '@ui-kitten/components'
+import React, { ComponentProps, useState } from 'react'
+import { View, ScrollView, Share, StatusBar, TouchableOpacity, Platform } from 'react-native'
+import { Layout } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
-import ImagePicker, { ImageOrVideo } from 'react-native-image-crop-picker'
+import Clipboard from '@react-native-clipboard/clipboard'
 
-import { useStyles } from '@berty-tech/styles'
-import { useNavigation, ScreenProps } from '@berty-tech/navigation'
-import { Maybe, useConversation, useMsgrContext } from '@berty-tech/store/hooks'
+import beapi from '@berty/api'
+import QRCode from 'react-native-qrcode-svg'
+import { useStyles } from '@berty/styles'
+import { ScreenFC, useNavigation } from '@berty/navigation'
+import { Maybe, useMessengerClient, useThemeColor } from '@berty/store'
+import { useConversationMembersDict, useConversation } from '@berty/hooks'
 
-import {
-	ButtonSetting,
-	FactionButtonSetting,
-	ButtonSettingRow,
-	ButtonDropDown,
-} from '../shared-components/SettingsButtons'
-import HeaderSettings from '../shared-components/Header'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
+import { ButtonSetting, FactionButtonSetting } from '../shared-components/SettingsButtons'
+import logo from '@berty/assets/images/1_berty_picto.png'
 import { MemberAvatar, MultiMemberAvatar } from '../avatars'
-import beapi from '@berty-tech/api'
-
-//
-// GroupChatSettings
-//
-
-// Styles
-const useStylesChatSettings = () => {
-	const [{ margin, height }] = useStyles()
-	return {
-		firstHeaderButton: [margin.right.scale(20), height(90)],
-		secondHeaderButton: [margin.right.scale(20), height(90)],
-		thirdHeaderButton: height(90),
-	}
-}
-
-const GroupChatSettingsHeaderButtons: React.FC<any> = ({ link, publicKey }) => {
-	const { navigate } = useNavigation()
-	const _styles = useStylesChatSettings()
-	const [{ padding, margin, color }] = useStyles()
-	const { t } = useTranslation()
-	return (
-		<View style={[padding.top.medium, margin.top.medium]}>
-			<ButtonSettingRow
-				state={[
-					{
-						name: t('chat.multi-member-settings.header-left-button'),
-						icon: 'search-outline',
-						color: color.blue,
-						style: _styles.firstHeaderButton,
-						disabled: true,
-					},
-					{
-						name: t('chat.multi-member-settings.header-middle-button'),
-						icon: 'phone-outline',
-						color: color.green,
-						style: _styles.secondHeaderButton,
-						disabled: true,
-					},
-					{
-						name: t('chat.multi-member-settings.header-right-button'),
-						icon: 'upload',
-						color: color.blue,
-						style: _styles.thirdHeaderButton,
-						disabled: !link || undefined,
-						onPress: link ? () => navigate.chat.multiMemberQR({ convId: publicKey }) : undefined,
-					},
-				]}
-			/>
-		</View>
-	)
-}
+import EnableNotificationsButton from '@berty/components/chat/EnableNotificationsButton'
+import ImagePicker, { ImageOrVideo } from 'react-native-image-crop-picker'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const GroupChatSettingsHeader: React.FC<{ publicKey: Maybe<string> }> = ({ publicKey }) => {
 	const conv = useConversation(publicKey)
-	const ctx = useMsgrContext()
 	const [picture, setPicture] = useState<ImageOrVideo | undefined>(undefined)
-	const [{ text, margin, row }] = useStyles()
+	const [{ text, padding, border, row }, { scaleSize, scaleHeight, windowWidth, windowHeight }] =
+		useStyles()
+	const colors = useThemeColor()
+	const qrCodeSize = Math.min(windowHeight, windowWidth) * 0.4
+	const { navigate } = useNavigation()
+	const client = useMessengerClient()
 
 	const handleSave = React.useCallback(async () => {
 		try {
 			if (picture) {
-				const stream = await ctx.client?.mediaPrepare({})
+				const stream = await client?.mediaPrepare({})
 				if (!stream) {
 					throw new Error('failed to open prepareAttachment stream')
 				}
@@ -102,17 +54,18 @@ const GroupChatSettingsHeader: React.FC<{ publicKey: Maybe<string> }> = ({ publi
 				const buf = beapi.messenger.AppMessage.SetGroupInfo.encode({
 					avatarCid: reply.cid,
 				}).finish()
-				await ctx.client?.interact({
+				await client?.interact({
 					conversationPublicKey: conv?.publicKey,
 					type: beapi.messenger.AppMessage.Type.TypeSetGroupInfo,
 					payload: buf,
 					mediaCids: [reply.cid],
+					metadata: true,
 				})
 			}
 		} catch (err) {
 			console.warn(err)
 		}
-	}, [conv?.publicKey, ctx.client, picture])
+	}, [conv?.publicKey, client, picture])
 
 	React.useEffect(() => {
 		if (picture !== undefined) {
@@ -121,73 +74,86 @@ const GroupChatSettingsHeader: React.FC<{ publicKey: Maybe<string> }> = ({ publi
 		return () => {}
 	}, [picture, handleSave])
 	return (
-		<View>
+		<View style={[row.center, padding.top.scale(30)]}>
 			<TouchableOpacity
-				style={[row.center]}
+				style={[
+					border.radius.medium,
+					padding.scale(20),
+					padding.top.scale(55),
+					{ backgroundColor: colors['main-background'] },
+				]}
 				onPress={async () => {
-					try {
-						const pic = await ImagePicker.openPicker({
-							width: 400,
-							height: 400,
-							cropping: true,
-							cropperCircleOverlay: true,
-							mediaType: 'photo',
-						})
-						if (pic) {
-							setPicture(pic)
-						}
-					} catch (err) {
-						console.log(err)
+					if (publicKey) {
+						navigate('Chat.MultiMemberQR', { convId: publicKey })
 					}
 				}}
 			>
-				<MultiMemberAvatar publicKey={publicKey} size={80} />
+				<View style={[{ alignItems: 'center' }]}>
+					<TouchableOpacity
+						style={{ position: 'absolute', top: -(90 * scaleSize) }}
+						onPress={async () => {
+							try {
+								const pic = await ImagePicker?.openPicker({
+									width: 400,
+									height: 400,
+									cropping: true,
+									cropperCircleOverlay: true,
+									mediaType: 'photo',
+								})
+								if (pic) {
+									setPicture(pic)
+								}
+							} catch (err) {
+								console.log(err)
+							}
+						}}
+					>
+						<MultiMemberAvatar publicKey={publicKey} size={80} />
+					</TouchableOpacity>
+					<UnifiedText style={[text.size.small]}>{conv?.displayName || ''}</UnifiedText>
+					<View style={[padding.top.scale(18 * scaleHeight)]}>
+						{conv?.link ? (
+							<QRCode
+								size={qrCodeSize}
+								value={conv?.link && conv?.link}
+								logo={logo}
+								color={colors['background-header']}
+								mode='circle'
+								backgroundColor={colors['main-background']}
+							/>
+						) : null}
+					</View>
+				</View>
 			</TouchableOpacity>
-			<Text
-				numberOfLines={1}
-				ellipsizeMode='tail'
-				style={[text.align.center, text.color.white, margin.top.small, text.bold.medium]}
-			>
-				{conv?.displayName || ''}
-			</Text>
 		</View>
 	)
 }
 
-const MultiMemberSettingsBody: React.FC<any> = ({ publicKey, link }) => {
-	const [{ padding, margin, color }, { scaleSize }] = useStyles()
-	const ctx = useMsgrContext()
-	const pk = publicKey
-	const members = ctx.members[pk] || {}
-	const navigation = useNavigation()
-	const memberLength = Object.values(members).length
-	const memberText = memberLength < 2 ? 'member' : 'members'
+const MultiMemberSettingsBody: React.FC<{
+	publicKey: string
+	link: string
+	navigation: ComponentProps<typeof MultiMemberSettings>['navigation']
+}> = ({ publicKey, link, navigation }) => {
+	const [{ padding, margin }, { scaleSize }] = useStyles()
+	const members = useConversationMembersDict(publicKey)
+	const membersCount = Object.values(members).length
 	const { t } = useTranslation()
-	const accountMember = Object.values(members).find((m) => m?.isMe)
+	const accountMember = Object.values(members).find(m => m?.isMe)
 
 	return (
 		<View style={[padding.medium]}>
 			<ButtonSetting
 				name={t('chat.multi-member-settings.media-button')}
 				icon='image-outline'
-				onPress={() => navigation.navigate.chat.sharedMedias({ convPk: publicKey })}
+				onPress={() => navigation.navigate('Chat.SharedMedias', { convPk: publicKey })}
 			/>
-			<ButtonSetting
-				name={t('chat.multi-member-settings.notifications-button')}
-				icon='bell-outline'
-				toggled
-				disabled
-			/>
+			{Platform.OS !== 'web' && <EnableNotificationsButton conversationPk={publicKey} />}
 			<FactionButtonSetting
-				name={t('chat.multi-member-settings.members-button.title')}
+				name={`${t('chat.multi-member-settings.members-button.title')} (${membersCount})`}
 				icon='users'
 				iconPack='custom'
-				state={{
-					value: `${memberLength} ${memberText}`,
-					color: color.blue,
-					bgColor: color.light.blue,
-				}}
 				style={[margin.top.medium]}
+				isDropdown
 			>
 				<View
 					style={{
@@ -206,36 +172,44 @@ const MultiMemberSettingsBody: React.FC<any> = ({ publicKey, link }) => {
 						name={accountMember?.displayName || ''}
 						alone={false}
 						actionIcon={null}
+						onPress={() => {
+							navigation.navigate('Group.ChatSettingsMemberDetail', {
+								convId: publicKey,
+								memberPk: accountMember?.publicKey!,
+								displayName: accountMember?.displayName || '',
+							})
+						}}
 					/>
 				</View>
 				{Object.entries(members)
 					.filter(([, m]) => m && !m.isMe)
-					.map(([k, m]) => {
+					.map(([k], key) => {
 						return (
 							<View
 								style={{
 									flexDirection: 'row',
 									alignItems: 'center',
 								}}
+								key={key}
 							>
-								<View
-									style={[
-										padding.top.small,
-										{
-											alignSelf: 'flex-start',
-										},
-									]}
-								>
-									<MemberAvatar
-										publicKey={members[k]?.publicKey}
-										conversationPublicKey={publicKey}
-										size={30 * scaleSize}
-									/>
-								</View>
-
-								<ButtonDropDown
-									title={m?.displayName || t('chat.multi-member-settings.members-button.unknown')}
-									body={m?.publicKey || ''}
+								<MemberAvatar
+									publicKey={members[k]?.publicKey}
+									conversationPublicKey={publicKey}
+									size={30 * scaleSize}
+								/>
+								<ButtonSetting
+									style={[padding.horizontal.small]}
+									textSize={15}
+									name={members[k]?.displayName || ''}
+									alone={false}
+									actionIcon={null}
+									onPress={() => {
+										navigation.navigate('Group.ChatSettingsMemberDetail', {
+											convId: publicKey,
+											memberPk: members[k]?.publicKey!,
+											displayName: members[k]?.displayName || '',
+										})
+									}}
 								/>
 							</View>
 						)
@@ -246,7 +220,7 @@ const MultiMemberSettingsBody: React.FC<any> = ({ publicKey, link }) => {
 				icon='user-plus'
 				iconPack='custom'
 				onPress={() =>
-					navigation.navigate.chat.multiMemberSettingsAddMembers({ convPK: publicKey })
+					navigation.navigate('Group.MultiMemberSettingsAddMembers', { convPK: publicKey })
 				}
 			/>
 			<ButtonSetting
@@ -256,7 +230,11 @@ const MultiMemberSettingsBody: React.FC<any> = ({ publicKey, link }) => {
 					link
 						? async () => {
 								try {
-									await Share.share({ url: link })
+									if (Platform.OS === 'web') {
+										Clipboard.setString(link)
+									} else {
+										await Share.share({ url: link, message: link })
+									}
 								} catch (e) {
 									console.error(e)
 								}
@@ -265,55 +243,47 @@ const MultiMemberSettingsBody: React.FC<any> = ({ publicKey, link }) => {
 				}
 				disabled={!link || undefined}
 			/>
-			<ButtonSetting
-				name={t('chat.multi-member-settings.save-button')}
-				icon='cloud-upload-outline'
-				iconSize={30}
-				actionIcon='arrow-ios-forward'
-				onPress={() => {
-					navigation.navigate.chat.replicateGroupSettings({ convId: publicKey })
-				}}
-			/>
-			<ButtonSetting
-				name={t('chat.multi-member-settings.erase-button')}
-				icon='message-circle-outline'
-				iconColor={color.red}
-				disabled
-			/>
-			<ButtonSetting
-				name={t('chat.multi-member-settings.leave-button')}
-				icon='log-out-outline'
-				iconColor={color.red}
-				disabled
-			/>
+			{Platform.OS !== 'web' && (
+				<ButtonSetting
+					name={t('chat.multi-member-settings.save-button')}
+					icon='cloud-upload-outline'
+					iconSize={30}
+					actionIcon='arrow-ios-forward'
+					onPress={() => {
+						navigation.navigate('Chat.ReplicateGroupSettings', { convId: publicKey })
+					}}
+				/>
+			)}
 		</View>
 	)
 }
 
-export const MultiMemberSettings: React.FC<ScreenProps.Chat.MultiMemberSettings> = ({ route }) => {
+export const MultiMemberSettings: ScreenFC<'Group.MultiMemberSettings'> = ({
+	route,
+	navigation,
+}) => {
 	const { convId } = route.params
 	const conv = useConversation(convId)
-	const { goBack } = useNavigation()
-	const [{ flex, padding, color }] = useStyles()
+	const colors = useThemeColor()
+	const [{ padding }] = useStyles()
 
 	if (!conv) {
-		goBack()
+		navigation.goBack()
 		return null
 	}
 	return (
-		<Layout style={[flex.tiny]}>
-			<StatusBar backgroundColor={color.blue} barStyle='light-content' />
-			<SwipeNavRecognizer>
-				<ScrollView contentContainerStyle={[padding.bottom.huge]} bounces={false}>
-					<HeaderSettings actionIcon='edit-outline' undo={goBack}>
-						<View>
-							<GroupChatSettingsHeader publicKey={conv.publicKey} />
-							<GroupChatSettingsHeaderButtons {...conv} />
-						</View>
-					</HeaderSettings>
-					<MultiMemberSettingsBody {...conv} />
-				</ScrollView>
-			</SwipeNavRecognizer>
+		<Layout style={{ flex: 1, backgroundColor: colors['main-background'] }}>
+			<StatusBar backgroundColor={colors['background-header']} barStyle='light-content' />
+			<ScrollView bounces={false}>
+				<View style={[padding.medium, { backgroundColor: colors['background-header'] }]}>
+					<GroupChatSettingsHeader publicKey={conv.publicKey} />
+				</View>
+				<MultiMemberSettingsBody
+					publicKey={conv.publicKey || ''}
+					link={conv.link || ''}
+					navigation={navigation}
+				/>
+			</ScrollView>
 		</Layout>
 	)
 }

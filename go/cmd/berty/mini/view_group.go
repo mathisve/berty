@@ -14,11 +14,9 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
-	"go.opentelemetry.io/otel/api/kv"
-	"go.opentelemetry.io/otel/api/trace"
 	"go.uber.org/zap"
 
-	"berty.tech/berty/v2/go/internal/tracer"
+	"berty.tech/berty/v2/go/internal/logutil"
 	"berty.tech/berty/v2/go/pkg/banner"
 	"berty.tech/berty/v2/go/pkg/messengertypes"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
@@ -38,6 +36,7 @@ type groupView struct {
 	muAggregates sync.Mutex
 	logger       *zap.Logger
 	hasNew       int32
+	lastSentCID  string
 }
 
 func (v *groupView) View() tview.Primitive {
@@ -45,7 +44,6 @@ func (v *groupView) View() tview.Primitive {
 }
 
 func (v *groupView) commandParser(ctx context.Context, input string) error {
-	tr := tracer.New("command")
 	input = strings.TrimSpace(input)
 
 	if len(input) > 0 && input[0] == '/' {
@@ -58,15 +56,11 @@ func (v *groupView) commandParser(ctx context.Context, input string) error {
 					}
 				}
 
-				ctx, span := tr.Start(ctx, attrs.title, trace.WithAttributes(kv.String("input", input)))
-				defer span.End()
-
 				if attrs.cmd == nil {
 					return errors.New("not implemented")
 				}
 
 				trimmed := strings.TrimPrefix(input, prefix+" ")
-				span.SetAttribute("args", trimmed)
 				return attrs.cmd(ctx, v, trimmed)
 			}
 		}
@@ -82,7 +76,7 @@ func (v *groupView) commandParser(ctx context.Context, input string) error {
 }
 
 func (v *groupView) OnSubmit(ctx context.Context, input string) {
-	v.logger.Debug("onSubmit", zap.String("input", input))
+	v.logger.Debug("onSubmit", logutil.PrivateString("input", input))
 	v.messages.View().ScrollToEnd()
 
 	if err := v.commandParser(ctx, input); err != nil {
@@ -105,24 +99,9 @@ func newViewGroup(v *tabbedGroupsView, g *protocoltypes.Group, memberPK, deviceP
 		messages:     newHistoryMessageList(v.app),
 		syncMessages: make(chan *historyMessage),
 		inputHistory: newInputHistory(),
-		logger:       logger.With(zap.String("group", pkAsShortID(g.PublicKey))),
+		logger:       logger.With(logutil.PrivateString("group", pkAsShortID(g.PublicKey))),
 		devices:      map[string]*protocoltypes.GroupAddMemberDevice{},
 		secrets:      map[string]*protocoltypes.GroupAddDeviceSecret{},
-	}
-}
-
-func (v *groupView) ack(ctx context.Context, evt *protocoltypes.GroupMessageEvent) {
-	if v.g.GroupType != protocoltypes.GroupTypeContact {
-		return
-	}
-
-	_, err := v.v.messenger.SendAck(ctx, &messengertypes.SendAck_Request{
-		GroupPK:   evt.EventContext.GroupPK,
-		MessageID: evt.EventContext.ID,
-	})
-	if err != nil {
-		v.messages.AppendErr(fmt.Errorf("error while sending ack: %s", err.Error()))
-		v.addBadge()
 	}
 }
 
@@ -227,7 +206,6 @@ func (v *groupView) loop(ctx context.Context) {
 					sender:      evt.Headers.DevicePK,
 					receivedAt:  time.Unix(0, am.GetSentDate()*1000000),
 				}, time.Time{})
-				v.ack(ctx, evt)
 			}
 		}
 	}
@@ -329,7 +307,6 @@ func (v *groupView) loop(ctx context.Context) {
 					})
 					v.addBadge()
 
-					v.ack(ctx, evt)
 				case messengertypes.AppMessage_TypeReplyOptions:
 					var payload messengertypes.AppMessage_ReplyOptions
 					err := proto.Unmarshal(am.GetPayload(), &payload)
@@ -376,18 +353,16 @@ func (v *groupView) loop(ctx context.Context) {
 			for {
 				evt, err = cl.Recv()
 				if err != nil {
-					if err == io.EOF {
-						return
+					if err != io.EOF {
+						v.syncMessages <- &historyMessage{
+							messageType: messageTypeError,
+							payload:     []byte(err.Error()),
+						}
 					}
-
-					// @TODO: Log this
-					v.syncMessages <- &historyMessage{
-						messageType: messageTypeError,
-						payload:     []byte(err.Error()),
-					}
-					continue
+					return
 				}
 
+				// @TODO: Log this
 				metadataEventHandler(ctx, v, evt, false, v.logger)
 			}
 		}()

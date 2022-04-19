@@ -1,11 +1,13 @@
 import React from 'react'
-import { TouchableOpacity, View, Text } from 'react-native'
+import { TouchableOpacity, View } from 'react-native'
+import { CommonActions } from '@react-navigation/native'
 
-import { useStyles } from '@berty-tech/styles'
-import { useConversation } from '@berty-tech/store/hooks'
-import { navigate, Routes } from '@berty-tech/navigation'
+import { useStyles } from '@berty/styles'
+import { dispatch } from '@berty/navigation'
+import { useConversation } from '@berty/hooks'
 
 import { useStylesNotification, NotificationTmpLogo } from './common'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const ContactRequestSent: React.FC<any> = ({ onClose, title, message, ...props }) => {
 	const [{ text }] = useStyles()
@@ -15,10 +17,22 @@ const ContactRequestSent: React.FC<any> = ({ onClose, title, message, ...props }
 	const conv = useConversation(payload.contact?.conversationPublicKey)
 
 	const handlePressConvMessage = () => {
-		if (conv) {
-			navigate(Routes.Chat.OneToOne, { convId: conv.publicKey })
+		if (conv?.publicKey) {
+			dispatch(
+				CommonActions.reset({
+					routes: [
+						{ name: 'Main.Home' },
+						{
+							name: 'Chat.OneToOne',
+							params: {
+								convId: conv.publicKey,
+							},
+						},
+					],
+				}),
+			)
 		} else {
-			console.warn('Notif: ContactRequestSent: Conversation not found')
+			console.warn('Notif: ContactRequestSent: Conversation not found or no public key')
 		}
 		if (typeof onClose === 'function') {
 			onClose()
@@ -35,12 +49,12 @@ const ContactRequestSent: React.FC<any> = ({ onClose, title, message, ...props }
 			<View style={_styles.innerTouchable}>
 				<NotificationTmpLogo />
 				<View style={_styles.titleAndTextWrapper}>
-					<Text numberOfLines={1} style={[text.color.black, text.bold.medium]}>
+					<UnifiedText numberOfLines={1} style={[text.bold]}>
 						{title}
-					</Text>
-					<Text numberOfLines={1} ellipsizeMode='tail' style={[text.color.black]}>
+					</UnifiedText>
+					<UnifiedText numberOfLines={1} ellipsizeMode='tail'>
 						{message}
-					</Text>
+					</UnifiedText>
 				</View>
 			</View>
 		</TouchableOpacity>

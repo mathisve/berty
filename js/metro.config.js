@@ -14,15 +14,15 @@ module.exports = {
 		getTransformOptions: async () => ({
 			transform: {
 				experimentalImportSupport: false,
-				inlineRequires: false,
+				inlineRequires: true,
 			},
 		}),
 		babelTransformerPath: require.resolve('react-native-svg-transformer'),
 	},
 	resolver: {
 		extraNodeModules: require('node-libs-react-native'),
-		assetExts: defaultAssetExts.filter((ext) => ext !== 'svg'),
+		assetExts: defaultAssetExts.filter(ext => ext !== 'svg'),
 		sourceExts: [...defaultSourceExts, 'svg'],
-		blacklistRE: exclusionList([/\.gomobile-cache\/.*/]),
+		blacklistRE: exclusionList([/\.gomobile-cache\/.*/, /^web\/.*/]),
 	},
 }

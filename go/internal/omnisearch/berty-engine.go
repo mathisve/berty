@@ -5,12 +5,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/discovery"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"go.uber.org/zap"
 
+	"berty.tech/berty/v2/go/internal/rendezvous"
+	"berty.tech/berty/v2/go/internal/tinder"
 	"berty.tech/berty/v2/go/pkg/bertyprotocol"
 	"berty.tech/berty/v2/go/pkg/messengertypes"
 )
@@ -19,17 +19,9 @@ type bertyEngine struct {
 	s *bertyprotocol.Swiper
 }
 
-func NewEngine(ctx context.Context, h host.Host, disc discovery.Discovery) (Engine, error) {
-	ps, err := pubsub.NewGossipSub(ctx, h,
-		pubsub.WithMessageSigning(true),
-		pubsub.WithFloodPublish(true),
-		pubsub.WithDiscovery(disc),
-		pubsub.WithPeerExchange(true),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &bertyEngine{s: bertyprotocol.NewSwiper(zap.NewNop(), ps, time.Hour*24)}, nil
+func NewEngine(ctx context.Context, h host.Host, disc tinder.UnregisterDiscovery) (Engine, error) {
+	rp := rendezvous.NewRotationInterval(time.Hour * 24)
+	return &bertyEngine{s: bertyprotocol.NewSwiper(zap.NewNop(), disc, rp)}, nil
 }
 
 func (p *bertyEngine) Search(octx context.Context, gwg *sync.WaitGroup, rc chan<- *ResultReturn, previous *ResultReturn) {

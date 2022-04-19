@@ -2,24 +2,31 @@ package bertybridge
 
 import (
 	"context"
+	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
+	manet "github.com/multiformats/go-multiaddr/net"
 	"github.com/oklog/run"
 	"github.com/pkg/errors"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
+	"golang.org/x/text/language"
 	"google.golang.org/grpc"
 
 	"berty.tech/berty/v2/go/internal/grpcutil"
-	"berty.tech/berty/v2/go/internal/initutil"
+	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/internal/lifecycle"
+	"berty.tech/berty/v2/go/internal/logutil"
 	"berty.tech/berty/v2/go/internal/notification"
 	proximity "berty.tech/berty/v2/go/internal/proximitytransport"
+	"berty.tech/berty/v2/go/pkg/accounttypes"
 	account_svc "berty.tech/berty/v2/go/pkg/bertyaccount"
 	bridge_svc "berty.tech/berty/v2/go/pkg/bertybridge"
 	"berty.tech/berty/v2/go/pkg/bertymessenger"
 	"berty.tech/berty/v2/go/pkg/errcode"
+	"berty.tech/berty/v2/go/pkg/osversion"
 )
 
 const bufListenerSize = 256 * 1024
@@ -36,9 +43,11 @@ type Bridge struct {
 	grpcServer     *grpc.Server
 	onceCloser     sync.Once
 	workers        run.Group
-	bleDriver      proximity.NativeDriver
-	nbDriver       proximity.NativeDriver
+	bleDriver      proximity.ProximityDriver
+	nbDriver       proximity.ProximityDriver
+	mdnsLocker     sync.Locker
 	logger         *zap.Logger
+	langtags       []language.Tag
 
 	lifecycleManager    *lifecycle.Manager
 	notificationManager notification.Manager
@@ -65,21 +74,52 @@ func NewBridge(config *Config) (*Bridge, error) {
 	}
 
 	// setup logger
+	var disableLogging bool
 	{
 		if nativeLogger := config.dLogger; nativeLogger != nil {
 			b.logger = newLogger(nativeLogger)
 		} else {
+			disableLogging = true
 			b.logger = zap.NewNop()
 		}
 
 		// @NOTE(gfanton): replace grpc logger as soon as possible to avoid DATA_RACE
-		initutil.ReplaceGRPCLogger(b.logger.Named("grpc"))
+		logutil.ReplaceGRPCLogger(b.logger.Named("grpc"))
+	}
+
+	// setup netdriver
+	{
+		if config.netDriver != nil {
+			inet := &inet{
+				net:    config.netDriver,
+				logger: b.logger,
+			}
+			ipfsutil.SetNetDriver(inet)
+			manet.SetNetInterface(inet)
+		}
+	}
+
+	// parse language
+	{
+		fields := []string{}
+		for _, lang := range config.languages {
+			tag, err := language.Parse(lang)
+			if err != nil {
+				b.logger.Warn("unable to parse language", zap.String("lang", lang), zap.Error(err))
+				continue
+			}
+
+			fields = append(fields, tag.String())
+			b.langtags = append(b.langtags, tag)
+		}
+
+		b.logger.Info("user preferred language loaded", zap.Strings("language", fields))
 	}
 
 	// setup notification manager
 	{
 		if nativeNotification := config.notifdriver; nativeNotification != nil {
-			b.notificationManager = newNotificationManagerAdaptater(b.logger, config.notifdriver)
+			b.notificationManager = newNotificationManagerAdapter(b.logger, config.notifdriver)
 		} else {
 			b.logger.Warn("no native notification set")
 			b.notificationManager = notification.NewLoggerManager(b.logger)
@@ -96,11 +136,12 @@ func NewBridge(config *Config) (*Bridge, error) {
 		b.nbDriver = config.nbDriver
 	}
 
-	// setup lifecycle manager
 	{
-		b.lifecycleManager = lifecycle.NewManager(bertymessenger.StateActive)
-		if lifecycleHandler := config.lc; lifecycleHandler != nil {
-			lifecycleHandler.RegisterHandler(b)
+		if runtime.GOOS == "android" && osversion.GetVersion().Major() >= 30 &&
+			config.mdnsLockerDriver != nil {
+			b.mdnsLocker = config.mdnsLockerDriver
+		} else {
+			b.mdnsLocker = &noopNativeMDNSLockerDriver{}
 		}
 	}
 
@@ -135,14 +176,18 @@ func NewBridge(config *Config) (*Bridge, error) {
 	// setup berty account service
 	{
 		opts := account_svc.Options{
-			RootDirectory: config.rootDir,
+			RootDirectory: config.RootDirPath,
 
+			MDNSLocker:            b.mdnsLocker,
+			Languages:             b.langtags,
 			ServiceClientRegister: b.serviceBridge,
 			NotificationManager:   b.notificationManager,
 			Logger:                b.logger,
+			DisableLogging:        disableLogging,
 			LifecycleManager:      b.lifecycleManager,
 			BleDriver:             b.bleDriver,
 			NBDriver:              b.nbDriver,
+			Keystore:              config.keystoreDriver,
 		}
 
 		var err error
@@ -156,7 +201,7 @@ func NewBridge(config *Config) (*Bridge, error) {
 		s := grpc.NewServer()
 
 		// register services bridge client
-		account_svc.RegisterAccountServiceServer(s, b.serviceAccount)
+		accounttypes.RegisterAccountServiceServer(s, b.serviceAccount)
 
 		bl := grpcutil.NewBufListener(ctx, bufListenerSize)
 		b.workers.Add(func() error {
@@ -178,7 +223,13 @@ func NewBridge(config *Config) (*Bridge, error) {
 		}
 	}
 
-	// setup native bridge client
+	// setup lifecycle manager
+	{
+		b.lifecycleManager = lifecycle.NewManager(bertymessenger.StateActive)
+		if lifecycleHandler := config.lc; lifecycleHandler != nil {
+			lifecycleHandler.RegisterHandler(b)
+		}
+	}
 
 	// start Bridge
 	b.logger.Debug("starting Bridge")
@@ -206,9 +257,14 @@ func (b *Bridge) HandleState(appstate int) {
 
 func (b *Bridge) HandleTask() LifeCycleBackgroundTask {
 	return newBackgroundTask(b.logger, func(ctx context.Context) error {
+		if b.serviceAccount == nil {
+			return fmt.Errorf("service accnunt not initialized")
+		}
+
 		b.lifecycleManager.UpdateState(bertymessenger.StateActive)
 		err := b.serviceAccount.WakeUp(ctx)
 		b.lifecycleManager.UpdateState(bertymessenger.StateInactive)
+
 		return err
 	})
 }

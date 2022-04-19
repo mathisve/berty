@@ -26,7 +26,7 @@ import (
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	rendezvous "github.com/libp2p/go-libp2p-rendezvous"
-	p2p_rpdb "github.com/libp2p/go-libp2p-rendezvous/db/sqlite"
+	p2p_rpdb "github.com/libp2p/go-libp2p-rendezvous/db/sqlcipher"
 	p2p_mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -45,22 +45,22 @@ type CoreAPIMock interface {
 	Close()
 }
 
-func getOrCreatePrivateKeyFromDatastore(t testing.TB, datastore ds.Datastore) p2p_ci.PrivKey {
+func getOrCreatePrivateKeyFromDatastore(t testing.TB, ctx context.Context, datastore ds.Datastore) p2p_ci.PrivKey {
 	const datastoreKeyForPrivateKey = "p2p_private_key"
 
-	privkeyb, err := datastore.Get(ds.NewKey("private_key"))
+	privkeyb, err := datastore.Get(ctx, ds.NewKey("private_key"))
 	if err == ds.ErrNotFound {
 		priv, _, err := p2p_ci.GenerateKeyPairWithReader(p2p_ci.RSA, 2048, crand.Reader)
 		if err != nil {
 			t.Fatalf("failed to generate pair key: %v", err)
 		}
 
-		privkeyb, err := priv.Bytes()
+		privkeyb, err := p2p_ci.MarshalPrivateKey(priv)
 		if err != nil {
 			t.Fatalf("failed to get raw priv key: %v", err)
 		}
 
-		if err := datastore.Put(ds.NewKey(datastoreKeyForPrivateKey), privkeyb); err != nil {
+		if err := datastore.Put(ctx, ds.NewKey(datastoreKeyForPrivateKey), privkeyb); err != nil {
 			t.Fatalf("failed to save priv key: %v", err)
 		}
 
@@ -77,18 +77,18 @@ func getOrCreatePrivateKeyFromDatastore(t testing.TB, datastore ds.Datastore) p2
 	return priv
 }
 
-func TestingRepo(t testing.TB, datastore ds.Datastore) ipfs_repo.Repo {
+func TestingRepo(t testing.TB, ctx context.Context, datastore ds.Datastore) ipfs_repo.Repo {
 	t.Helper()
 
 	c := ipfs_cfg.Config{}
-	priv := getOrCreatePrivateKeyFromDatastore(t, datastore)
+	priv := getOrCreatePrivateKeyFromDatastore(t, ctx, datastore)
 
 	pid, err := p2p_peer.IDFromPublicKey(priv.GetPublic())
 	if err != nil {
 		t.Fatalf("failed to get pid from pub key: %v", err)
 	}
 
-	privkeyb, err := priv.Bytes()
+	privkeyb, err := p2p_ci.MarshalPrivateKey(priv)
 	if err != nil {
 		t.Fatalf("failed to get raw priv key: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestingCoreAPIUsingMockNet(ctx context.Context, t testing.TB, opts *Testing
 		datastore = dsync.MutexWrap(ds.NewMapDatastore())
 	}
 
-	repo := TestingRepo(t, datastore)
+	repo := TestingRepo(t, ctx, datastore)
 
 	var ps *pubsub.PubSub
 	var disc tinder.Service
@@ -176,10 +176,7 @@ func TestingCoreAPIUsingMockNet(ctx context.Context, t testing.TB, opts *Testing
 		}
 
 		ps, err = pubsub.NewGossipSub(ctx, h,
-			pubsub.WithMessageSigning(true),
-			pubsub.WithFloodPublish(true),
 			pubsub.WithDiscovery(disc),
-			pubsub.WithPeerExchange(true),
 			pubsubtracker.EventTracerOption(),
 		)
 
@@ -203,7 +200,7 @@ func TestingCoreAPIUsingMockNet(ctx context.Context, t testing.TB, opts *Testing
 	require.NoError(t, err, "unable to extend core api from node")
 
 	psapi := NewPubSubAPI(ctx, opts.Logger, disc, ps)
-	exapi = InjectPubSubCoreAPIExtendedAdaptater(exapi, psapi)
+	exapi = InjectPubSubCoreAPIExtendedAdapter(exapi, psapi)
 	EnableConnLogger(ctx, opts.Logger, mnode.PeerHost())
 
 	api := &coreAPIMock{

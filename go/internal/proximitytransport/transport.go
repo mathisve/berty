@@ -14,6 +14,8 @@ import (
 	mafmt "github.com/multiformats/go-multiaddr-fmt"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 // The ProximityTransport is a libp2p transport that initializes NativeDriver.
@@ -26,33 +28,51 @@ var _ tpt.Transport = &proximityTransport{}
 var _ ProximityTransport = &proximityTransport{}
 
 // TransportMap prevents instantiating multiple Transport
-var TransportMap sync.Map
+var TransportMap = make(map[string]*proximityTransport)
+
+// TransportMapMutex is the mutex for the TransportMap var
+var TransportMapMutex sync.RWMutex
+
+// Define log level for driver loggers
+const (
+	Verbose = iota
+	Debug
+	Info
+	Warn
+	Error
+)
 
 type ProximityTransport interface {
 	HandleFoundPeer(remotePID string) bool
 	HandleLostPeer(remotePID string)
 	ReceiveFromPeer(remotePID string, payload []byte)
+	Log(level int, message string)
 }
 
 type proximityTransport struct {
 	host     host.Host
 	upgrader *tptu.Upgrader
 
-	connMap  sync.Map
-	cache    *RingBufferMap
-	lock     sync.RWMutex
-	listener *Listener
-	driver   NativeDriver
-	logger   *zap.Logger
-	ctx      context.Context
+	connMap      map[string]*Conn
+	connMapMutex sync.RWMutex
+	cache        *RingBufferMap
+	lock         sync.RWMutex
+	listener     *Listener
+	driver       ProximityDriver
+	logger       *zap.Logger
+	ctx          context.Context
 }
 
-func NewTransport(ctx context.Context, l *zap.Logger, driver NativeDriver) func(h host.Host, u *tptu.Upgrader) (*proximityTransport, error) {
+func NewTransport(ctx context.Context, l *zap.Logger, driver ProximityDriver) func(h host.Host, u *tptu.Upgrader) (*proximityTransport, error) {
+	if l == nil {
+		l = zap.NewNop()
+	}
+
 	l = l.Named("ProximityTransport")
 
 	if driver == nil {
 		l.Error("error: NewTransport: driver is nil")
-		driver = &NoopNativeDriver{}
+		driver = &NoopProximityDriver{}
 	}
 
 	return func(h host.Host, u *tptu.Upgrader) (*proximityTransport, error) {
@@ -60,6 +80,7 @@ func NewTransport(ctx context.Context, l *zap.Logger, driver NativeDriver) func(
 		transport := &proximityTransport{
 			host:     h,
 			upgrader: u,
+			connMap:  make(map[string]*Conn),
 			cache:    NewRingBufferMap(l, 128),
 			driver:   driver,
 			logger:   l,
@@ -95,7 +116,10 @@ func (t *proximityTransport) Dial(ctx context.Context, remoteMa ma.Multiaddr, re
 	}
 
 	// Can't have two connections on the same multiaddr
-	if _, ok := t.connMap.Load(remoteAddr); ok {
+	t.connMapMutex.RLock()
+	_, ok := t.connMap[remoteAddr]
+	t.connMapMutex.RUnlock()
+	if ok {
 		return nil, errors.New("error: proximityTransport.Dial: already connected to this address")
 	}
 
@@ -129,9 +153,11 @@ func (t *proximityTransport) Listen(localMa ma.Multiaddr) (tpt.Listener, error) 
 		}
 	}
 
-	t.lock.RLock()
 	// If the a listener already exists for this driver, returns an error.
-	_, ok := TransportMap.Load(t.driver.ProtocolName())
+	TransportMapMutex.RLock()
+	_, ok := TransportMap[t.driver.ProtocolName()]
+	TransportMapMutex.RUnlock()
+	t.lock.RLock()
 	if ok || t.listener != nil {
 		t.lock.RUnlock()
 		return nil, errors.New("error: proximityTransport.Listen: one listener maximum")
@@ -139,7 +165,9 @@ func (t *proximityTransport) Listen(localMa ma.Multiaddr) (tpt.Listener, error) 
 	t.lock.RUnlock()
 
 	// Register this transport
-	TransportMap.Store(t.driver.ProtocolName(), t)
+	TransportMapMutex.Lock()
+	TransportMap[t.driver.ProtocolName()] = t
+	TransportMapMutex.Unlock()
 
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -154,28 +182,30 @@ func (t *proximityTransport) Listen(localMa ma.Multiaddr) (tpt.Listener, error) 
 // If the connection is not actived yet, data is added in the connection cache level.
 // Cache are circular buffer, avoiding RAM memory attack.
 func (t *proximityTransport) ReceiveFromPeer(remotePID string, payload []byte) {
-	t.logger.Debug("ReceiveFromPeer()", zap.String("remotePID", remotePID), zap.Binary("payload", payload))
+	t.logger.Debug("ReceiveFromPeer()", zap.String("remotePID", remotePID), logutil.PrivateBinary("payload", payload))
 
 	// copy value from driver
 	data := make([]byte, len(payload))
 	copy(data, payload)
 
-	c, ok := t.connMap.Load(remotePID)
+	t.connMapMutex.RLock()
+	c, ok := t.connMap[remotePID]
+	t.connMapMutex.RUnlock()
 	if ok {
 		// Put payload in the Conn cache if libp2p connection is not ready
-		if !c.(*Conn).isReady() {
-			c.(*Conn).Lock()
-			if !c.(*Conn).ready {
+		if !c.isReady() {
+			c.Lock()
+			if !c.ready {
 				t.logger.Info("ReceiveFromPeer: connection is not ready to accept incoming packets, add it to cache")
-				c.(*Conn).cache.Add(remotePID, data)
-				c.(*Conn).Unlock()
+				c.cache.Add(remotePID, data)
+				c.Unlock()
 				return
 			}
-			c.(*Conn).Unlock()
+			c.Unlock()
 		}
 
 		// Write the payload into pipe
-		c.(*Conn).mp.input <- data
+		c.mp.input <- data
 	} else {
 		t.logger.Info("ReceiveFromPeer: no Conn found, put payload in cache")
 		t.cache.Add(remotePID, data)
@@ -217,6 +247,9 @@ func (t *proximityTransport) HandleFoundPeer(sRemotePID string) bool {
 	t.host.Peerstore().AddAddr(remotePID, remoteMa,
 		pstore.TempAddrTTL)
 
+	// Delete previous cache if it exists
+	t.cache.Delete(sRemotePID)
+
 	// Peer with lexicographical smallest peerID inits libp2p connection.
 	if listener.Addr().String() < sRemotePID {
 		t.logger.Debug("HandleFoundPeer: outgoing libp2p connection")
@@ -255,7 +288,7 @@ func (t *proximityTransport) HandleFoundPeer(sRemotePID string) bool {
 // HandleLostPeer is called by the native driver when the connection with the peer is lost.
 // Closes connections with the peer.
 func (t *proximityTransport) HandleLostPeer(sRemotePID string) {
-	t.logger.Debug("HandleLostPeer", zap.String("remotePID", sRemotePID))
+	t.logger.Debug("HandleLostPeer", logutil.PrivateString("remotePID", sRemotePID))
 	remotePID, err := peer.Decode(sRemotePID)
 	if err != nil {
 		t.logger.Error("HandleLostPeer: wrong remote peerID")
@@ -277,6 +310,19 @@ func (t *proximityTransport) HandleLostPeer(sRemotePID string) {
 		if conn.RemoteMultiaddr().Equal(remoteMa) {
 			conn.Close()
 		}
+	}
+}
+
+func (t *proximityTransport) Log(level int, message string) {
+	switch level {
+	case Verbose, Debug:
+		t.logger.Debug(message)
+	case Info:
+		t.logger.Info(message)
+	case Warn:
+		t.logger.Warn(message)
+	case Error:
+		t.logger.Error(message)
 	}
 }
 

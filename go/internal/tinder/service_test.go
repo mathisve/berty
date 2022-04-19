@@ -12,8 +12,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	idisc "github.com/libp2p/go-libp2p-discovery"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tj/assert"
 
 	"berty.tech/berty/v2/go/internal/testutil"
 )
@@ -50,7 +50,8 @@ func TestNewService(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAdvertiseWatchdogs(t *testing.T) {
+func TestFlappyAdvertiseWatchdogs(t *testing.T) {
+	testutil.FilterStability(t, testutil.Flappy)
 	const advertisekey = "test_key"
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -65,7 +66,7 @@ func TestAdvertiseWatchdogs(t *testing.T) {
 	opts := &Opts{
 		Logger: l,
 		// should expired after 4 ticks
-		AdvertiseResetInterval: tick * 4,
+		AdvertiseResetInterval: tick * 5,
 		AdvertiseGracePeriod:   0,
 	}
 
@@ -84,8 +85,8 @@ func TestAdvertiseWatchdogs(t *testing.T) {
 	ok := ms.HasPeerRecord(advertisekey, client.Host.ID())
 	require.True(t, ok)
 
-	// should be expired after 5 ticks
-	time.Sleep(tick * 5)
+	// should be expired after 6 ticks
+	time.Sleep(tick * 6)
 	ok = ms.HasPeerRecord(advertisekey, client.Host.ID())
 	require.False(t, ok)
 }

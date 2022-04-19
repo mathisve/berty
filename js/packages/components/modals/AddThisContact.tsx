@@ -1,17 +1,22 @@
 import React, { useState } from 'react'
-import { View, TouchableOpacity, TextInput, Text as TextNative } from 'react-native'
+import { View, TouchableOpacity, TextInput } from 'react-native'
 import { Buffer } from 'buffer'
-import { Text, Icon } from '@ui-kitten/components'
-import { CommonActions, useNavigation } from '@react-navigation/native'
+import { CommonActions } from '@react-navigation/native'
+import { Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
-import { useStyles } from '@berty-tech/styles'
+
+import { useStyles } from '@berty/styles'
+import messengerMethodsHooks from '@berty/store/methods'
+import { useThemeColor } from '@berty/store'
+import { dispatch as navDispatch } from '@berty/navigation/rootRef'
+import { useNavigation } from '@berty/navigation'
+import { useAppDispatch, useContactConversation } from '@berty/hooks'
+
 import { ContactAvatar } from '../avatars'
 import { TabBar } from '../shared-components/TabBar'
 import { FingerprintContent } from '../shared-components/FingerprintContent'
 import InvalidScan from './InvalidScan'
-import messengerMethodsHooks from '@berty-tech/store/methods'
-import { dispatch } from '@berty-tech/navigation/rootRef'
-import { Routes } from '@berty-tech/navigation'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const useStylesModal = () => {
 	const [{ width, border, height, opacity }] = useStyles()
@@ -45,7 +50,9 @@ const SelectedContent = ({
 			return <FingerprintContent seed={pubKey} isEncrypted={isEncrypted} />
 		default:
 			return (
-				<Text style={[padding.horizontal.medium]}>Error: Unknown content name "{contentName}"</Text>
+				<UnifiedText style={[padding.horizontal.medium]}>
+					Error: Unknown content name "{contentName}"
+				</UnifiedText>
 			)
 	}
 }
@@ -57,14 +64,16 @@ const AddThisContact: React.FC<{
 	type: string
 	isPassword: boolean
 }> = ({ displayName, publicKey, link, type, isPassword }) => {
-	const [
-		{ row, text, column, color, flex, absolute, padding, background, border, margin },
-	] = useStyles()
+	const [{ row, text, column, flex, absolute, padding, border, margin }] = useStyles()
+	const colors = useThemeColor()
 	const navigation = useNavigation()
 	const { call: requestContact, error, done } = messengerMethodsHooks.useContactRequest()
 	const [selectedContent, setSelectedContent] = useState('fingerprint')
 	const _styles = useStylesModal()
 	const { t } = useTranslation()
+	const dispatch = useAppDispatch()
+	const { dispatch: navigationDispatch } = useNavigation()
+	const convId = useContactConversation(publicKey)?.publicKey
 
 	const [password, setPassword] = useState('')
 
@@ -72,14 +81,28 @@ const AddThisContact: React.FC<{
 
 	React.useEffect(() => {
 		if (done && !error) {
-			dispatch(
+			navDispatch(
 				CommonActions.reset({
-					routes: [{ name: Routes.Main.Home }],
+					routes: [{ name: 'Main.Home' }],
 				}),
 			)
 		}
-	}, [done, error, navigation])
-
+	}, [done, error, dispatch])
+	if (convId) {
+		navigationDispatch(
+			CommonActions.reset({
+				routes: [
+					{ name: 'Main.Home' },
+					{
+						name: 'Chat.OneToOne',
+						params: {
+							convId,
+						},
+					},
+				],
+			}),
+		)
+	}
 	if (error) {
 		return <InvalidScan type={type} error={error} />
 	}
@@ -90,23 +113,22 @@ const AddThisContact: React.FC<{
 		>
 			<View
 				style={[
-					background.white,
 					padding.horizontal.medium,
 					padding.bottom.medium,
 					border.radius.large,
-					{ width: '100%' },
+					{ width: '100%', backgroundColor: colors['main-background'] },
 				]}
 			>
 				<View style={[absolute.scale({ top: -50 }), row.item.justify]}>
 					<ContactAvatar
 						publicKey={publicKey}
 						fallbackNameSeed={displayName}
-						style={[border.shadow.big, row.center] as any}
+						style={[border.shadow.big, row.center, { shadowColor: colors.shadow }] as any}
 						size={100}
 					/>
 				</View>
 				<View style={[padding.top.scale(55)]}>
-					<Text style={{ textAlign: 'center' }}>{displayName}</Text>
+					<UnifiedText style={{ textAlign: 'center' }}>{displayName}</UnifiedText>
 					<TabBar
 						tabs={[
 							{
@@ -148,16 +170,20 @@ const AddThisContact: React.FC<{
 								margin.top.medium,
 							]}
 						>
-							<Icon name='info-outline' fill={color.blue} width={15} height={15} />
-							<TextNative
+							<Icon name='info-outline' fill={colors['background-header']} width={15} height={15} />
+							<UnifiedText
 								style={[
-									{ fontFamily: 'Open Sans', color: color.blue, paddingLeft: 5, fontSize: 13 },
+									{
+										color: colors['background-header'],
+										paddingLeft: 5,
+									},
 									text.align.center,
-									text.bold.small,
+									text.light,
+									text.size.small,
 								]}
 							>
 								Enter the contact password
-							</TextNative>
+							</UnifiedText>
 						</View>
 						<View
 							style={[
@@ -166,7 +192,7 @@ const AddThisContact: React.FC<{
 								margin.top.medium,
 								row.fill,
 								padding.vertical.scale(12),
-								{ backgroundColor: '#E8E9FC99' },
+								{ backgroundColor: colors['input-background'] },
 							]}
 						>
 							<TextInput
@@ -175,7 +201,7 @@ const AddThisContact: React.FC<{
 								onChangeText={setPassword}
 								autoCapitalize='none'
 								editable={true}
-								style={[{ fontFamily: 'Open Sans' }, text.bold.small]}
+								style={[{ fontFamily: 'Open Sans' }, text.light]}
 								placeholder='Password...'
 							/>
 						</View>
@@ -190,24 +216,30 @@ const AddThisContact: React.FC<{
 						}}
 						style={[
 							flex.medium,
-							background.light.blue,
 							padding.vertical.scale(12),
 							border.radius.small,
+							{ backgroundColor: colors['positive-asset'] },
 						]}
 					>
-						<Text style={[text.color.blue, { textAlign: 'center' }]}>ADD THIS CONTACT</Text>
+						<UnifiedText style={{ textAlign: 'center', color: colors['background-header'] }}>
+							ADD THIS CONTACT
+						</UnifiedText>
 					</TouchableOpacity>
 				</View>
 			</View>
 			<TouchableOpacity
 				style={[
-					background.white,
 					padding.vertical.medium,
 					border.shadow.medium,
 					row.item.justify,
 					column.justify,
 					_styles.closeRequest,
-					{ position: 'absolute', bottom: '2%' },
+					{
+						position: 'absolute',
+						bottom: '2%',
+						backgroundColor: colors['main-background'],
+						shadowColor: colors.shadow,
+					},
 				]}
 				onPress={navigation.goBack}
 			>
@@ -216,7 +248,7 @@ const AddThisContact: React.FC<{
 					name='close-outline'
 					width={25}
 					height={25}
-					fill={color.grey}
+					fill={colors['secondary-text']}
 				/>
 			</TouchableOpacity>
 		</View>

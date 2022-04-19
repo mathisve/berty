@@ -1,20 +1,26 @@
 import React, { useEffect, useState } from 'react'
 import { TouchableOpacity } from 'react-native'
-import { Text, Icon } from '@ui-kitten/components'
-import RNFS from 'react-native-fs'
-import { useMsgrContext } from '@berty-tech/store/hooks'
-import { useStyles } from '@berty-tech/styles'
+import { Icon } from '@ui-kitten/components'
+
+import { useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
+
 import { getSource } from '../../utils'
+import { useSelector } from 'react-redux'
+import { selectProtocolClient } from '@berty/redux/reducers/ui.reducer'
+import { UnifiedText } from '../../shared-components/UnifiedText'
 
 export const FileMessage: React.FC<{
 	medias: any
 	onLongPress: () => void
 	isHighlight: boolean
 }> = ({ medias, onLongPress, isHighlight }) => {
-	const { protocolClient } = useMsgrContext()
-	const [source, setSource] = useState('')
+	const colors = useThemeColor()
+	const protocolClient = useSelector(selectProtocolClient)
+
+	const [, setSource] = useState('')
 	const [isLoading, setLoading] = useState(false)
-	const [isDownloaded, setDownloaded] = useState(false)
+	const [isDownloaded] = useState(false)
 	const [{ margin }] = useStyles()
 
 	useEffect(() => {
@@ -22,10 +28,10 @@ export const FileMessage: React.FC<{
 			return
 		}
 		getSource(protocolClient, medias[0].cid)
-			.then((src) => {
+			.then(src => {
 				setSource(src)
 			})
-			.catch((e) => console.error('failed to get picture message image:', e))
+			.catch(e => console.error('failed to get picture message image:', e))
 	}, [protocolClient, medias])
 
 	return (
@@ -35,7 +41,7 @@ export const FileMessage: React.FC<{
 					flexDirection: 'row',
 				},
 				isHighlight && {
-					shadowColor: '#525BEC',
+					shadowColor: colors.shadow,
 					shadowOffset: {
 						width: 0,
 						height: 8,
@@ -46,33 +52,34 @@ export const FileMessage: React.FC<{
 				},
 			]}
 			onLongPress={onLongPress}
-			onPress={() => {
+			onPress={async () => {
 				setLoading(true)
-				RNFS.writeFile(`${RNFS.DocumentDirectoryPath}/${medias[0].filename}`, source, 'base64')
-					.then(() => {
-						setDownloaded(true)
-						setLoading(false)
-					})
-					.catch((err) => console.log(err))
 			}}
 		>
-			<Icon name='file' height={20} width={20} fill={isHighlight ? '#525BEC' : '#939FB6'} />
-			<Text
+			<Icon
+				name='file'
+				height={20}
+				width={20}
+				fill={isHighlight ? colors['background-header'] : colors['secondary-text']}
+			/>
+			<UnifiedText
 				style={[
 					{
 						fontStyle: 'italic',
 						textDecorationLine: 'underline',
 					},
 					isHighlight && {
-						textDecorationColor: '#525BEC',
-						color: '#525BEC',
+						textDecorationColor: colors['background-header'],
+						color: colors['background-header'],
 					},
 				]}
 			>
 				{medias[0].filename}
-			</Text>
+			</UnifiedText>
 			{(isDownloaded || isLoading) && (
-				<Text style={[margin.left.tiny]}>({isDownloaded ? 'Downloaded' : 'Downloading'})</Text>
+				<UnifiedText style={[margin.left.tiny]}>
+					({isDownloaded ? 'Downloaded' : 'Downloading'})
+				</UnifiedText>
 			)}
 		</TouchableOpacity>
 	)

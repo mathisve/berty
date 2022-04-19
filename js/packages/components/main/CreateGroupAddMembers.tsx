@@ -3,22 +3,28 @@ import {
 	View,
 	ScrollView,
 	TouchableOpacity,
-	Text as TextNative,
 	TouchableWithoutFeedback,
 	StatusBar,
 } from 'react-native'
-import { Layout, Text, Icon } from '@ui-kitten/components'
-import { SafeAreaView } from 'react-native-safe-area-context'
-
-import { useNavigation } from '@berty-tech/navigation'
-import { useStyles } from '@berty-tech/styles'
-import { useContactList } from '@berty-tech/store/hooks'
-import { ContactPicker } from '@berty-tech/components/shared-components'
-
-import { FooterCreateGroup } from './CreateGroupFooter'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
-import { ContactAvatar } from '../avatars'
+import { Layout, Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
+import { useDispatch, useSelector } from 'react-redux'
+
+import { useNavigation } from '@berty/navigation'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store'
+import {
+	removeMemberFromInvitationListById,
+	selectInvitationListMembers,
+} from '@berty/redux/reducers/groupCreationForm.reducer'
+import { AppDispatch } from '@berty/redux/store'
+import { berty } from '@berty/api/root.pb'
+import { useAllContacts } from '@berty/hooks'
+
+import { ContactPicker } from '../shared-components'
+import { FooterCreateGroup } from './CreateGroupFooter'
+import { ContactAvatar } from '../avatars'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 export const Header: React.FC<{
 	title: string
@@ -38,19 +44,20 @@ export const Header: React.FC<{
 	onPress = null,
 	style = null,
 }) => {
-	const [
-		{ height, border, margin, row, padding, text, column, color, background, opacity },
-		{ scaleHeight },
-	] = useStyles()
+	const [{ height, border, margin, row, padding, text, column, opacity }, { scaleHeight }] =
+		useStyles()
+	const colors = useThemeColor()
+
 	return (
-		<View style={[!first && background.white]}>
+		<View style={[!first && { backgroundColor: colors['main-background'] }]}>
 			<TouchableWithoutFeedback onPress={onPress}>
 				<View
 					style={[
-						background.white,
 						border.radius.top.scale(30),
 						!first && border.shadow.big,
+						!first && { shadowColor: colors.shadow },
 						disabled && opacity(0.5),
+						{ backgroundColor: colors['main-background'] },
 						style,
 					]}
 				>
@@ -59,29 +66,27 @@ export const Header: React.FC<{
 							style={[
 								margin.top.medium,
 								row.item.justify,
-								border.scale(2.5),
-								border.color.light.grey,
 								border.radius.scale(4),
 								{
-									backgroundColor: '#E8E9FC',
+									backgroundColor: `${colors['secondary-text']}70`,
+									height: 5 * scaleHeight,
 									width: 60 * scaleHeight,
 								},
 							]}
 						/>
 						<View style={[margin.top.small]}>
 							<View style={[row.fill, padding.horizontal.medium, padding.top.small]}>
-								<TextNative
-									style={[
-										text.bold.medium,
-										text.size.scale(25),
-										text.color.black,
-										column.item.center,
-									]}
-								>
+								<UnifiedText style={[text.bold, text.size.scale(25), column.item.center]}>
 									{title}
-								</TextNative>
+								</UnifiedText>
 								{icon && (
-									<Icon name={icon} pack={iconPack} width={30} height={30} fill={color.black} />
+									<Icon
+										name={icon}
+										pack={iconPack}
+										width={30}
+										height={30}
+										fill={colors['main-text']}
+									/>
 								)}
 							</View>
 						</View>
@@ -94,69 +99,61 @@ export const Header: React.FC<{
 }
 
 const MemberItem: React.FC<{
-	member: any
-	onRemove: () => void
-	canRemove: boolean | undefined
-}> = ({ member, onRemove, canRemove }) => {
-	const [
-		{ padding, column, text, color, row, maxWidth, border, background },
-		{ scaleSize },
-	] = useStyles()
+	member: berty.messenger.v1.IContact
+}> = ({ member }) => {
+	const [{ padding, column, text, row, maxWidth, border }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+	const dispatch = useDispatch<AppDispatch>()
 
 	return (
 		<View style={[padding.horizontal.medium, maxWidth(100)]}>
 			<View style={[column.top, padding.top.small]}>
 				<ContactAvatar size={70 * scaleSize} publicKey={member.publicKey} />
-				<TextNative
+				<UnifiedText
 					numberOfLines={1}
 					style={[
-						text.color.white,
 						column.item.center,
 						padding.top.tiny,
-						text.bold.medium,
+						text.bold,
 						text.align.center,
+						{ color: colors['reverted-main-text'] },
 					]}
 				>
 					{member.displayName}
-				</TextNative>
+				</UnifiedText>
 			</View>
-			{canRemove === undefined ||
-				(canRemove === true && (
-					<TouchableOpacity
-						style={[
-							border.shadow.medium,
-							border.radius.medium,
-							background.white,
-							column.justify,
-							{
-								height: 25 * scaleSize,
-								width: 25 * scaleSize,
-								position: 'absolute',
-								top: 5 * scaleSize,
-								right: 9 * scaleSize,
-							},
-						]}
-						onPress={onRemove}
-					>
-						<Icon
-							name='close-outline'
-							width={20 * scaleSize}
-							height={20 * scaleSize}
-							fill={color.red}
-							style={row.item.justify}
-						/>
-					</TouchableOpacity>
-				))}
+			<TouchableOpacity
+				style={[
+					border.shadow.medium,
+					border.radius.medium,
+					column.justify,
+					{
+						height: 25 * scaleSize,
+						width: 25 * scaleSize,
+						position: 'absolute',
+						top: 5 * scaleSize,
+						right: 9 * scaleSize,
+						backgroundColor: colors['main-background'],
+						shadowColor: colors.shadow,
+					},
+				]}
+				onPress={() => dispatch(removeMemberFromInvitationListById(member.publicKey!))}
+			>
+				<Icon
+					name='close-outline'
+					width={20 * scaleSize}
+					height={20 * scaleSize}
+					fill={colors['warning-asset']}
+					style={row.item.justify}
+				/>
+			</TouchableOpacity>
 		</View>
 	)
 }
 
-export const MemberList: React.FC<{
-	members: any[]
-	onRemoveMember: (id: string) => void
-	initialMembers?: any[]
-}> = ({ members, onRemoveMember, initialMembers = [] }) => {
+export const MemberList = () => {
 	const [{ padding }] = useStyles()
+	const members = useSelector(selectInvitationListMembers)
 
 	return (
 		<View style={{ height: 135 }}>
@@ -165,130 +162,42 @@ export const MemberList: React.FC<{
 				showsHorizontalScrollIndicator={false}
 				contentContainerStyle={[padding.left.medium]}
 			>
-				{members.map((member) => (
-					<MemberItem
-						key={member.publicKey}
-						member={member}
-						onRemove={() => onRemoveMember(member.publicKey)}
-						canRemove={
-							initialMembers
-								? !initialMembers.find(
-										(initialMember) => initialMember.publicKey === member.publicKey,
-								  )
-								: undefined
-						}
-					/>
+				{members.map(member => (
+					<MemberItem key={member.publicKey} member={member} />
 				))}
 			</ScrollView>
 		</View>
 	)
 }
 
-export const CreateGroupHeader: React.FC<{}> = () => {
+export const CreateGroupAddMembers: React.FC = () => {
+	const [{ flex, margin }, { scaleHeight }] = useStyles()
+	const colors = useThemeColor()
 	const navigation = useNavigation()
-	const [{ color, padding, margin, text }, { scaleSize }] = useStyles()
-	const { t }: { t: any } = useTranslation()
-	return (
-		<View
-			style={[
-				padding.medium,
-				margin.bottom.small,
-				{
-					flexDirection: 'row',
-					justifyContent: 'space-between',
-					alignItems: 'center',
-				},
-			]}
-		>
-			<View
-				style={[
-					{
-						flexDirection: 'row',
-						alignItems: 'center',
-					},
-				]}
-			>
-				<TouchableOpacity
-					onPress={navigation.goBack}
-					style={{
-						padding: 7,
-						alignItems: 'center',
-						justifyContent: 'center',
-					}}
-				>
-					<Icon
-						name='arrow-back-outline'
-						width={_iconArrowBackSize * scaleSize}
-						height={_iconArrowBackSize * scaleSize}
-						fill={color.white}
-					/>
-				</TouchableOpacity>
-				<Text
-					style={[
-						text.size.huge,
-						{
-							fontWeight: '700',
-							lineHeight: 1.25 * _titleSize,
-							marginLeft: 10,
-							color: color.white,
-						},
-					]}
-				>
-					{t('main.home.create-group.title')}
-				</Text>
-			</View>
-			<Icon
-				name='users'
-				pack='custom'
-				width={35 * scaleSize}
-				height={35 * scaleSize}
-				fill={color.white}
-			/>
-		</View>
-	)
-}
-
-const _iconArrowBackSize = 30
-const _titleSize = 25
-
-export const CreateGroupAddMembers: React.FC<{
-	onSetMember: (contact: any) => void
-	onRemoveMember: (id: string) => void
-	members: any[]
-}> = ({ onSetMember, onRemoveMember, members }) => {
-	const [{ flex, background, margin, color }, { scaleHeight }] = useStyles()
-	const navigation = useNavigation()
-	const { t }: { t: any } = useTranslation()
-	const accountContacts = useContactList()
+	const { t } = useTranslation()
+	const accountContacts = useAllContacts()
 
 	return (
 		<Layout style={[flex.tiny]}>
-			<StatusBar backgroundColor={color.blue} barStyle='light-content' />
-			<SwipeNavRecognizer onSwipeRight={() => navigation.goBack()}>
-				<SafeAreaView style={[background.blue]}>
-					<CreateGroupHeader />
-					<MemberList members={members} onRemoveMember={onRemoveMember} />
-				</SafeAreaView>
-				<View style={[background.white, { flex: 1 }]}>
-					<View style={{ top: -30 * scaleHeight, flex: 1 }}>
-						<Header
-							title={t('main.home.create-group.add-members')}
-							first
-							style={[margin.bottom.scale(-1)]}
-						/>
-						<ContactPicker
-							members={members}
-							onSetMember={onSetMember}
-							onRemoveMember={onRemoveMember}
-							accountContacts={accountContacts}
-						/>
-					</View>
+			<StatusBar backgroundColor={colors['background-header']} barStyle='light-content' />
+			<View style={{ backgroundColor: colors['background-header'] }}>
+				<MemberList />
+			</View>
+			<View style={{ flex: 1, backgroundColor: colors['main-background'] }}>
+				<View style={{ top: -30 * scaleHeight, flex: 1 }}>
+					<Header
+						title={t('main.home.create-group.add-members')}
+						first
+						style={[margin.bottom.scale(-1)]}
+					/>
+					<ContactPicker accountContacts={accountContacts} />
 				</View>
-			</SwipeNavRecognizer>
+			</View>
 			<FooterCreateGroup
 				title={t('main.home.create-group.continue')}
+				titleStyle={{ textTransform: 'uppercase' }}
 				icon='arrow-forward-outline'
-				action={navigation.navigate.main.createGroup.createGroupFinalize}
+				action={() => navigation.navigate('Main.CreateGroupFinalize')}
 			/>
 		</Layout>
 	)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"strconv"
 
@@ -15,6 +16,7 @@ type Settings struct {
 	Notification     bool
 	AutoScroll       bool
 	TraceUncollapsed bool
+	Address          string
 }
 
 var defaultSettings = Settings{
@@ -22,6 +24,7 @@ var defaultSettings = Settings{
 	Notification:     true,
 	AutoScroll:       false,
 	TraceUncollapsed: false,
+	Address:          "0.0.0.0",
 }
 
 const (
@@ -29,13 +32,44 @@ const (
 	maxPort = 49151
 )
 
-func (c *Config) GetPortSetting() (string, error) {
+func (c *Config) GetAddressSetting() (string, error) {
 	if !c.isInitialized() {
 		return "", errors.New("config not initialized")
 	}
 	settings := c.getSettings()
 
-	return strconv.Itoa(settings.Port), nil
+	return settings.Address, nil
+}
+
+func (c *Config) SetAddressSetting(address string) error {
+	if !c.isInitialized() {
+		return errors.New("config not initialized")
+	}
+
+	if net.ParseIP(address) == nil {
+		return errors.New(fmt.Sprintf("invalid address value: %s", address))
+	}
+
+	newSettings := c.getSettings()
+	newSettings.Address = address
+
+	if err := c.saveSettingsToFile(newSettings); err != nil {
+		return errors.Wrap(err, "saving settings to file failed")
+	}
+
+	c.logger.Debugf("address setting successfully updated with value: %d", address)
+	c.setSettings(newSettings)
+
+	return nil
+}
+
+func (c *Config) GetPortSetting() (int, error) {
+	if !c.isInitialized() {
+		return 0, errors.New("config not initialized")
+	}
+	settings := c.getSettings()
+
+	return settings.Port, nil
 }
 
 func (c *Config) SetPortSetting(port string) error {

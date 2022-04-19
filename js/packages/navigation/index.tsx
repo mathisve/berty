@@ -1,5 +1,3 @@
-export { useNavigation } from './hook'
-export type { ScreenProps } from './types'
-export { Routes } from './types'
-export type { RouteProps } from './types'
-export { isReadyRef, navigationRef, navigate } from './rootRef'
+export * from './hook'
+export type { ScreenFC } from './types'
+export * from './rootRef'

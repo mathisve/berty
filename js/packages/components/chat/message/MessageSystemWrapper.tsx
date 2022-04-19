@@ -1,11 +1,14 @@
 import React from 'react'
 import { View } from 'react-native'
 
-import { useStyles } from '@berty-tech/styles'
-import Logo from '../../main/1_berty_picto.svg'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store/hooks'
+
+import Logo from '@berty/assets/logo/1_berty_picto.svg'
 
 const MessageSystemLogo = () => {
-	const [{ border, flex, margin, width, background, height }, { scaleSize }] = useStyles()
+	const [{ border, flex, margin, width, height }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 	const logoDiameter = 28
 	const diffSize = 6
 	return (
@@ -22,11 +25,11 @@ const MessageSystemLogo = () => {
 					flex.justify.center,
 					width(logoDiameter + diffSize * scaleSize),
 					height(logoDiameter + diffSize * scaleSize),
-					background.white,
 					border.radius.scale((logoDiameter + diffSize) / 2),
 					{
-						borderWidth: 2,
-						borderColor: 'rgba(215, 217, 239, 1)',
+						borderWidth: 1,
+						borderColor: colors['input-background'],
+						backgroundColor: colors['main-background'],
 					},
 				]}
 			>
@@ -46,16 +49,22 @@ export const MessageSystemWrapper: React.FC<{
 	logo?: boolean
 }> = ({ children, styleContainer = {}, logo = true }) => {
 	const [{ padding, border, margin, width }] = useStyles()
+	const colors = useThemeColor()
 	const logoDiameter = 28
 	return (
 		<View
 			style={[
-				{ backgroundColor: '#EDEEF8' },
+				{ backgroundColor: colors['input-background'] },
 				padding.medium,
 				logo && margin.top.scale(logoDiameter * 0.75), // make room for logo
 				width(350),
 				border.radius.scale(10),
-				{ shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2.5 } },
+				{
+					shadowOpacity: 0.1,
+					shadowRadius: 4,
+					shadowColor: colors.shadow,
+					shadowOffset: { width: 0, height: 2.5 },
+				},
 				styleContainer,
 			]}
 		>

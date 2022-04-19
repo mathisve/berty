@@ -7,26 +7,34 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grandcat/zeroconf"
 	ipfscid "github.com/ipfs/go-cid"
+	ctxio "github.com/jbenet/go-context/io"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
 	"berty.tech/berty/v2/go/internal/bertylinks"
 	"berty.tech/berty/v2/go/internal/discordlog"
+	"berty.tech/berty/v2/go/internal/logutil"
+	"berty.tech/berty/v2/go/internal/messengerdb"
+	"berty.tech/berty/v2/go/internal/messengerutil"
 	"berty.tech/berty/v2/go/internal/streamutil"
 	"berty.tech/berty/v2/go/internal/sysutil"
+	"berty.tech/berty/v2/go/pkg/authtypes"
 	"berty.tech/berty/v2/go/pkg/banner"
-	"berty.tech/berty/v2/go/pkg/bertyprotocol"
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/messengertypes"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
-	"berty.tech/berty/v2/go/pkg/username"
+	"berty.tech/berty/v2/go/pkg/tempdir"
+	"berty.tech/berty/v2/go/pkg/tyber"
 )
 
 func (svc *service) DevShareInstanceBertyID(ctx context.Context, req *messengertypes.DevShareInstanceBertyID_Request) (*messengertypes.DevShareInstanceBertyID_Reply, error) {
@@ -161,6 +169,7 @@ func (svc *service) ParseDeepLink(_ context.Context, req *messengertypes.ParseDe
 
 	link, err := bertylinks.UnmarshalLink(req.Link, req.Passphrase)
 	if err != nil {
+		svc.logger.Error("unable to parse deeplink", logutil.PrivateString("link", req.Link), zap.Error(err))
 		return nil, errcode.ErrMessengerInvalidDeepLink.Wrap(err)
 	}
 	ret.Link = link
@@ -172,9 +181,6 @@ func (svc *service) ShareableBertyGroup(ctx context.Context, req *messengertypes
 	if req == nil {
 		return nil, errcode.ErrInvalidInput
 	}
-
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
 
 	grpInfo, err := svc.protocolClient.GroupInfo(ctx, &protocoltypes.GroupInfo_Request{
 		GroupPK: req.GroupPK,
@@ -202,13 +208,13 @@ func (svc *service) ShareableBertyGroup(ctx context.Context, req *messengertypes
 }
 
 // maybe we should preserve the previous generic api
-func (svc *service) SendContactRequest(ctx context.Context, req *messengertypes.SendContactRequest_Request) (*messengertypes.SendContactRequest_Reply, error) {
+func (svc *service) SendContactRequest(ctx context.Context, req *messengertypes.SendContactRequest_Request) (_ *messengertypes.SendContactRequest_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, svc.logger, "Sending contact request")
+	defer func() { endSection(err, "") }()
+
 	if req == nil || req.BertyID == nil || req.BertyID.AccountPK == nil || req.BertyID.PublicRendezvousSeed == nil {
 		return nil, errcode.ErrMissingInput
 	}
-
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
 
 	contactRequest := protocoltypes.ContactRequestSend_Request{
 		Contact: &protocoltypes.ShareableContact{
@@ -218,8 +224,7 @@ func (svc *service) SendContactRequest(ctx context.Context, req *messengertypes.
 		},
 		OwnMetadata: req.OwnMetadata,
 	}
-	_, err := svc.protocolClient.ContactRequestSend(ctx, &contactRequest)
-	if err != nil {
+	if _, err := svc.protocolClient.ContactRequestSend(ctx, &contactRequest); err != nil {
 		return nil, errcode.TODO.Wrap(err)
 	}
 
@@ -229,15 +234,12 @@ func (svc *service) SendContactRequest(ctx context.Context, req *messengertypes.
 }
 
 func (svc *service) autoReplicateContactGroupOnAllServers(contactPK []byte) {
-	groupPK, err := groupPKFromContactPK(svc.ctx, svc.protocolClient, contactPK)
+	groupPK, err := messengerutil.GroupPKFromContactPK(svc.ctx, svc.protocolClient, contactPK)
 	if err != nil {
 		return
 	}
 
-	if _, err := svc.protocolClient.ActivateGroup(svc.ctx, &protocoltypes.ActivateGroup_Request{
-		GroupPK:   groupPK,
-		LocalOnly: false,
-	}); err != nil {
+	if err := svc.ActivateGroup(groupPK); err != nil {
 		return
 	}
 
@@ -246,7 +248,7 @@ func (svc *service) autoReplicateContactGroupOnAllServers(contactPK []byte) {
 
 func (svc *service) autoReplicateGroupOnAllServers(groupPK []byte) {
 	replicationServices := map[string]*messengertypes.ServiceToken{}
-	acc, err := svc.db.getAccount()
+	acc, err := svc.db.GetAccount()
 	if err != nil {
 		svc.logger.Error("unable to fetch account", zap.Error(err))
 		return
@@ -257,7 +259,7 @@ func (svc *service) autoReplicateGroupOnAllServers(groupPK []byte) {
 		return
 	}
 	for _, s := range acc.ServiceTokens {
-		if s.ServiceType == bertyprotocol.ServiceReplicationID {
+		if s.ServiceType == authtypes.ServiceReplicationID {
 			replicationServices[s.AuthenticationURL] = s
 		}
 	}
@@ -270,7 +272,7 @@ func (svc *service) autoReplicateGroupOnAllServers(groupPK []byte) {
 	for _, s := range replicationServices {
 		if _, err := svc.ReplicationServiceRegisterGroup(svc.ctx, &messengertypes.ReplicationServiceRegisterGroup_Request{
 			TokenID:               s.TokenID,
-			ConversationPublicKey: b64EncodeBytes(groupPK),
+			ConversationPublicKey: messengerutil.B64EncodeBytes(groupPK),
 		}); err != nil {
 			svc.logger.Error("unable to replicate group on server", zap.Error(err))
 		}
@@ -294,7 +296,7 @@ func (svc *service) SystemInfo(ctx context.Context, req *messengertypes.SystemIn
 
 	// messenger's db
 	{
-		dbInfo, err := svc.db.getDBInfo()
+		dbInfo, err := svc.db.GetDBInfo()
 		if err != nil {
 			errs = multierr.Append(errs, err)
 			reply.Messenger.DB = &messengertypes.SystemInfo_DB{}
@@ -325,43 +327,11 @@ func (svc *service) SystemInfo(ctx context.Context, req *messengertypes.SystemIn
 	return &reply, nil
 }
 
-func (svc *service) SendAck(ctx context.Context, req *messengertypes.SendAck_Request) (*messengertypes.SendAck_Reply, error) {
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
-
-	gInfo, err := svc.protocolClient.GroupInfo(ctx, &protocoltypes.GroupInfo_Request{
-		GroupPK: req.GroupPK,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if gInfo.Group.GroupType != protocoltypes.GroupTypeContact {
-		return nil, errcode.ErrInvalidInput.Wrap(fmt.Errorf("only %s groups are supported", protocoltypes.GroupTypeContact.String()))
-	}
-
-	am, err := messengertypes.AppMessage_TypeAcknowledge.MarshalPayload(0, b64EncodeBytes(req.MessageID), nil, &messengertypes.AppMessage_Acknowledge{})
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = svc.protocolClient.AppMessageSend(ctx, &protocoltypes.AppMessageSend_Request{
-		GroupPK: req.GroupPK,
-		Payload: am,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &messengertypes.SendAck_Reply{}, nil
-}
-
 func (svc *service) ConversationStream(req *messengertypes.ConversationStream_Request, sub messengertypes.MessengerService_ConversationStreamServer) error {
 	// TODO: cursors
 
 	// send existing convs
-	convs, err := svc.db.getAllConversations()
+	convs, err := svc.db.GetAllConversations()
 	if err != nil {
 		return err
 	}
@@ -410,7 +380,7 @@ func (svc *service) streamEverything(sub messengertypes.MessengerService_EventSt
 
 	// send interactions
 	{
-		interactions, err := svc.db.getAllInteractions()
+		interactions, err := svc.db.GetAllInteractions()
 		if err != nil {
 			return err
 		}
@@ -428,7 +398,7 @@ func (svc *service) streamEverything(sub messengertypes.MessengerService_EventSt
 
 	// send medias
 	{
-		medias, err := svc.db.getAllMedias()
+		medias, err := svc.db.GetAllMedias()
 		if err != nil {
 			return err
 		}
@@ -451,7 +421,7 @@ func (svc *service) streamShallow(sub messengertypes.MessengerService_EventStrea
 	// send account
 	{
 		svc.logger.Debug("sending account")
-		acc, err := svc.db.getAccount()
+		acc, err := svc.db.GetAccount()
 		if err != nil {
 			return err
 		}
@@ -466,7 +436,7 @@ func (svc *service) streamShallow(sub messengertypes.MessengerService_EventStrea
 
 	// send contacts
 	{
-		contacts, err := svc.db.getAllContacts()
+		contacts, err := svc.db.GetAllContacts()
 		if err != nil {
 			return err
 		}
@@ -484,7 +454,7 @@ func (svc *service) streamShallow(sub messengertypes.MessengerService_EventStrea
 
 	// send conversations
 	{
-		convs, err := svc.db.getAllConversations()
+		convs, err := svc.db.GetAllConversations()
 		if err != nil {
 			return err
 		}
@@ -502,7 +472,7 @@ func (svc *service) streamShallow(sub messengertypes.MessengerService_EventStrea
 
 	// send members
 	{
-		members, err := svc.db.getAllMembers()
+		members, err := svc.db.GetAllMembers()
 		if err != nil {
 			return err
 		}
@@ -520,7 +490,7 @@ func (svc *service) streamShallow(sub messengertypes.MessengerService_EventStrea
 
 	// send interactions
 	if includeInteractionsAndMedias > 0 {
-		interactions, medias, err := svc.db.getPaginatedInteractions(&messengertypes.PaginatedInteractionsOptions{Amount: includeInteractionsAndMedias})
+		interactions, medias, err := svc.db.GetPaginatedInteractions(&messengertypes.PaginatedInteractionsOptions{Amount: includeInteractionsAndMedias})
 		if err != nil {
 			return err
 		}
@@ -587,13 +557,14 @@ func (svc *service) EventStream(req *messengertypes.EventStream_Request, sub mes
 					svc.logger.Error("failed to unmarshal payload for logging", zap.Error(err))
 					payload = nil
 				}
-				svc.logger.Debug("sending stream event", zap.String("type", e.GetType().String()), zap.Any("payload", payload))
+				svc.logger.Debug("sending stream event", zap.String("type", e.GetType().String()), logutil.PrivateAny("payload", payload))
 			}
 
 			if err := sub.Send(&messengertypes.EventStream_Reply{Event: e}); err != nil {
 				// next commented line allows me to manually test the behavior on a send error. How to isolate into an automatic test?
 				// errch <- errors.New("TEST ERROR")
-				errch <- err
+				// errch <- err
+				svc.logger.Error("err: ", zap.Error(err))
 			}
 
 			return nil
@@ -611,7 +582,10 @@ func (svc *service) EventStream(req *messengertypes.EventStream_Request, sub mes
 	}
 }
 
-func (svc *service) ConversationCreate(ctx context.Context, req *messengertypes.ConversationCreate_Request) (*messengertypes.ConversationCreate_Reply, error) {
+func (svc *service) ConversationCreate(ctx context.Context, req *messengertypes.ConversationCreate_Request) (_ *messengertypes.ConversationCreate_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, svc.logger, "Creating conversation")
+	defer func() { endSection(err, "") }()
+
 	svc.handlerMutex.Lock()
 	defer svc.handlerMutex.Unlock()
 
@@ -623,14 +597,13 @@ func (svc *service) ConversationCreate(ctx context.Context, req *messengertypes.
 		return nil, err
 	}
 	pk := cr.GetGroupPK()
-	pkStr := b64EncodeBytes(pk)
-	svc.logger.Info("Created conv", zap.String("dn", req.GetDisplayName()), zap.String("pk", pkStr))
+	pkStr := messengerutil.B64EncodeBytes(pk)
+	svc.logger.Info("Created conv", logutil.PrivateString("dn", req.GetDisplayName()), logutil.PrivateString("pk", pkStr))
 
 	// activate group
 	{
-		_, err := svc.protocolClient.ActivateGroup(svc.ctx, &protocoltypes.ActivateGroup_Request{GroupPK: pk})
-		if err != nil {
-			svc.logger.Warn("failed to activate group", zap.String("pk", pkStr))
+		if err := svc.ActivateGroup(pk); err != nil {
+			svc.logger.Warn("failed to activate group", logutil.PrivateString("pk", pkStr))
 		}
 	}
 
@@ -651,17 +624,18 @@ func (svc *service) ConversationCreate(ctx context.Context, req *messengertypes.
 
 	// Create new conversation
 	conv := &messengertypes.Conversation{
-		AccountMemberPublicKey: b64EncodeBytes(gir.GetMemberPK()),
+		AccountMemberPublicKey: messengerutil.B64EncodeBytes(gir.GetMemberPK()),
 		PublicKey:              pkStr,
 		DisplayName:            dn,
 		Link:                   webURL,
 		Type:                   messengertypes.Conversation_MultiMemberType,
-		LocalDevicePublicKey:   b64EncodeBytes(gir.GetDevicePK()),
-		CreatedDate:            timestampMs(time.Now()),
+		LocalDevicePublicKey:   messengerutil.B64EncodeBytes(gir.GetDevicePK()),
+		LocalMemberPublicKey:   messengerutil.B64EncodeBytes(gir.GetMemberPK()),
+		CreatedDate:            messengerutil.TimestampMs(time.Now()),
 	}
 
 	// Update database
-	isNew, err := svc.db.updateConversation(*conv)
+	isNew, err := svc.db.UpdateConversation(*conv)
 	if err != nil {
 		return nil, err
 	}
@@ -695,16 +669,16 @@ func (svc *service) ConversationCreate(ctx context.Context, req *messengertypes.
 	** It would make sense to offer it as an option for privacy sensitive groups of small sizes though
 	** In the case that the group invitation leaks after an user leaves it, this user's name will be inaccessible to new users joining the group
 	 */
-	if err := svc.sendAccountUserInfo(pkStr); err != nil {
+	if err := svc.sendAccountUserInfo(ctx, pkStr); err != nil {
 		svc.logger.Error("failed to set creator username in group", zap.Error(err))
 	}
 
 	for _, contactPK := range req.GetContactsToInvite() {
-		am, err := messengertypes.AppMessage_TypeGroupInvitation.MarshalPayload(timestampMs(time.Now()), "", nil, &messengertypes.AppMessage_GroupInvitation{Link: conv.GetLink()})
+		am, err := messengertypes.AppMessage_TypeGroupInvitation.MarshalPayload(messengerutil.TimestampMs(time.Now()), "", nil, &messengertypes.AppMessage_GroupInvitation{Link: conv.GetLink()})
 		if err != nil {
 			return nil, err
 		}
-		cpkb, err := b64DecodeBytes(contactPK)
+		cpkb, err := messengerutil.B64DecodeBytes(contactPK)
 		if err != nil {
 			return nil, err
 		}
@@ -732,6 +706,7 @@ func (svc *service) ConversationJoin(ctx context.Context, req *messengertypes.Co
 
 	link, err := bertylinks.UnmarshalLink(url, req.Passphrase)
 	if err != nil {
+		svc.logger.Error("unable to parse deeplink", logutil.PrivateString("link", req.Link), zap.Error(err))
 		return nil, errcode.ErrMessengerInvalidDeepLink.Wrap(err)
 	}
 	if link.Kind == messengertypes.BertyLink_EncryptedV1Kind {
@@ -755,9 +730,8 @@ func (svc *service) ConversationJoin(ctx context.Context, req *messengertypes.Co
 
 	// activate group
 	{
-		_, err := svc.protocolClient.ActivateGroup(svc.ctx, &protocoltypes.ActivateGroup_Request{GroupPK: gpkb})
-		if err != nil {
-			svc.logger.Warn("failed to activate group", zap.String("pk", b64EncodeBytes(gpkb)))
+		if err := svc.ActivateGroup(gpkb); err != nil {
+			svc.logger.Warn("failed to activate group", logutil.PrivateString("pk", messengerutil.B64EncodeBytes(gpkb)))
 		}
 	}
 
@@ -767,17 +741,17 @@ func (svc *service) ConversationJoin(ctx context.Context, req *messengertypes.Co
 	}
 
 	conv := messengertypes.Conversation{
-		AccountMemberPublicKey: b64EncodeBytes(gir.GetMemberPK()),
-		PublicKey:              b64EncodeBytes(gpkb),
+		AccountMemberPublicKey: messengerutil.B64EncodeBytes(gir.GetMemberPK()),
+		PublicKey:              messengerutil.B64EncodeBytes(gpkb),
 		DisplayName:            bgroup.GetDisplayName(),
 		Link:                   url,
 		Type:                   messengertypes.Conversation_MultiMemberType,
-		LocalDevicePublicKey:   b64EncodeBytes(gir.GetDevicePK()),
-		CreatedDate:            timestampMs(time.Now()),
+		LocalDevicePublicKey:   messengerutil.B64EncodeBytes(gir.GetDevicePK()),
+		CreatedDate:            messengerutil.TimestampMs(time.Now()),
 	}
 
 	// update db
-	isNew, err := svc.db.updateConversation(conv)
+	isNew, err := svc.db.UpdateConversation(conv)
 	if err != nil {
 		return nil, err
 	}
@@ -792,7 +766,7 @@ func (svc *service) ConversationJoin(ctx context.Context, req *messengertypes.Co
 
 	// Try to put user name in group metadata 3 times
 	for i := 0; i < 3; i++ {
-		if err := svc.sendAccountUserInfo(conv.PublicKey); err != nil {
+		if err := svc.sendAccountUserInfo(ctx, conv.PublicKey); err != nil {
 			svc.logger.Error("failed to set username in group", zap.Error(err))
 		}
 	}
@@ -800,35 +774,24 @@ func (svc *service) ConversationJoin(ctx context.Context, req *messengertypes.Co
 	return &messengertypes.ConversationJoin_Reply{}, nil
 }
 
-func ensureValidBase64CID(str string) error {
-	cidBytes, err := b64DecodeBytes(str)
-	if err != nil {
-		return fmt.Errorf("decode base64: %s", err.Error())
-	}
+func (svc *service) AccountUpdate(ctx context.Context, req *messengertypes.AccountUpdate_Request) (_ *messengertypes.AccountUpdate_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, svc.logger, "Updating account")
+	defer func() { endSection(err, "") }()
 
-	_, err = ipfscid.Cast(cidBytes)
-	if err != nil {
-		return fmt.Errorf("decode cid: %s", err.Error())
-	}
-
-	return nil
-}
-
-func (svc *service) AccountUpdate(ctx context.Context, req *messengertypes.AccountUpdate_Request) (*messengertypes.AccountUpdate_Reply, error) {
 	svc.handlerMutex.Lock()
 	defer svc.handlerMutex.Unlock()
 
 	avatarCID := req.GetAvatarCID()
 	if avatarCID != "" {
-		if err := ensureValidBase64CID(avatarCID); err != nil {
+		if err := messengerutil.EnsureValidBase64CID(avatarCID); err != nil {
 			err = fmt.Errorf("couldn't ensure the avatar cid is a valid ipfs cid: %s", err)
 			svc.logger.Error("AccountUpdate: bad avatar cid", zap.Error(err))
 			return nil, errcode.ErrInvalidInput.Wrap(err)
 		}
 	}
 
-	err := svc.db.tx(func(tx *dbWrapper) error {
-		acc, err := tx.getAccount()
+	if err := svc.db.TX(ctx, func(tx *messengerdb.DBWrapper) error {
+		acc, err := tx.GetAccount()
 		if err != nil {
 			svc.logger.Error("AccountUpdate: failed to get account", zap.Error(err))
 			return errcode.TODO.Wrap(err)
@@ -847,7 +810,7 @@ func (svc *service) AccountUpdate(ctx context.Context, req *messengertypes.Accou
 			svc.logger.Debug("AccountUpdate: nothing to do")
 			return nil
 		}
-		svc.logger.Debug("AccountUpdate: updating account", zap.String("display_name", dn), zap.String("avatar_cid", avatarCID))
+		svc.logger.Debug("AccountUpdate: updating account", logutil.PrivateString("display_name", dn), logutil.PrivateString("avatar_cid", avatarCID))
 
 		ret, err := svc.internalInstanceShareableBertyID(ctx, &messengertypes.InstanceShareableBertyID_Request{DisplayName: dn})
 		if err != nil {
@@ -855,7 +818,7 @@ func (svc *service) AccountUpdate(ctx context.Context, req *messengertypes.Accou
 			return err
 		}
 
-		acc, err = tx.updateAccount(acc.PublicKey, ret.GetWebURL(), dn, avatarCID)
+		acc, err = tx.UpdateAccount(acc.PublicKey, ret.GetWebURL(), dn, avatarCID)
 		if err != nil {
 			svc.logger.Error("AccountUpdate: updating account in db", zap.Error(err))
 			return err
@@ -869,17 +832,16 @@ func (svc *service) AccountUpdate(ctx context.Context, req *messengertypes.Accou
 		}
 
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
-	convos, err := svc.db.getAllConversations()
+	convos, err := svc.db.GetAllConversations()
 	if err != nil {
 		svc.logger.Error("AccountUpdate: get conversations", zap.Error(err))
 	} else {
 		for _, conv := range convos {
-			if err := svc.sendAccountUserInfo(conv.GetPublicKey()); err != nil {
+			if err := svc.sendAccountUserInfo(ctx, conv.GetPublicKey()); err != nil {
 				svc.logger.Error("AccountUpdate: send user info", zap.Error(err))
 			}
 		}
@@ -889,9 +851,13 @@ func (svc *service) AccountUpdate(ctx context.Context, req *messengertypes.Accou
 	return &messengertypes.AccountUpdate_Reply{}, err
 }
 
-func (svc *service) ContactRequest(ctx context.Context, req *messengertypes.ContactRequest_Request) (*messengertypes.ContactRequest_Reply, error) {
+func (svc *service) ContactRequest(ctx context.Context, req *messengertypes.ContactRequest_Request) (response *messengertypes.ContactRequest_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, svc.logger, fmt.Sprintf("Sending contact request to %s", req.Link))
+	defer func() { endSection(err, "") }()
+
 	link, err := bertylinks.UnmarshalLink(req.GetLink(), req.Passphrase)
 	if err != nil {
+		svc.logger.Error("unable to parse deeplink", logutil.PrivateString("link", req.Link), zap.Error(err))
 		return nil, errcode.ErrMessengerInvalidDeepLink.Wrap(err)
 	}
 	if link.Kind == messengertypes.BertyLink_EncryptedV1Kind {
@@ -901,10 +867,16 @@ func (svc *service) ContactRequest(ctx context.Context, req *messengertypes.Cont
 		return nil, errcode.ErrMessengerInvalidDeepLink.Wrap(err)
 	}
 
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
+	contactDisplayName := link.GetBertyID().GetDisplayName()
+	contactPK := messengerutil.B64EncodeBytes(link.GetBertyID().GetAccountPK())
 
-	acc, err := svc.db.getAccount()
+	svc.logger.Debug("Validated contact link", tyber.FormatStepLogFields(ctx, []tyber.Detail{
+		{Name: "ContactDisplayName", Description: contactDisplayName},
+		{Name: "ContactPublicKey", Description: contactPK},
+		{Name: "ContactPublicRendezvousSeed", Description: messengerutil.B64EncodeBytes(link.GetBertyID().GetPublicRendezvousSeed())},
+	}, tyber.UpdateTraceName(fmt.Sprintf("Sending contact request to \"%s\" (%s)", contactDisplayName, contactPK)))...)
+
+	acc, err := svc.db.GetAccount()
 	if err != nil {
 		return nil, errcode.TODO.Wrap(err)
 	}
@@ -913,7 +885,7 @@ func (svc *service) ContactRequest(ctx context.Context, req *messengertypes.Cont
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
 
-	m, err := proto.Marshal(&messengertypes.ContactMetadata{DisplayName: link.BertyID.GetDisplayName()})
+	m, err := proto.Marshal(&messengertypes.ContactMetadata{DisplayName: contactDisplayName})
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
@@ -936,23 +908,23 @@ func (svc *service) ContactRequest(ctx context.Context, req *messengertypes.Cont
 	return &messengertypes.ContactRequest_Reply{}, nil
 }
 
-func (svc *service) ContactAccept(ctx context.Context, req *messengertypes.ContactAccept_Request) (*messengertypes.ContactAccept_Reply, error) {
+func (svc *service) ContactAccept(ctx context.Context, req *messengertypes.ContactAccept_Request) (_ *messengertypes.ContactAccept_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, svc.logger, fmt.Sprintf("Accepting contact request from %s", req.GetPublicKey()))
+	defer func() { endSection(err, "") }()
+
 	pk := req.GetPublicKey()
 	if pk == "" {
 		return nil, errcode.ErrInvalidInput.Wrap(fmt.Errorf("no public key supplied"))
 	}
 
-	pkb, err := b64DecodeBytes(pk)
+	pkb, err := messengerutil.B64DecodeBytes(pk)
 	if err != nil {
 		return nil, errcode.ErrInvalidInput
 	}
 
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
+	svc.logger.Debug("retrieving contact", logutil.PrivateString("contact_pk", pk))
 
-	svc.logger.Debug("retrieving contact", zap.String("contact_pk", pk))
-
-	c, err := svc.db.getContactByPK(pk)
+	c, err := svc.db.GetContactByPK(pk)
 	if err != nil {
 		return nil, errcode.TODO.Wrap(err)
 	}
@@ -971,60 +943,94 @@ func (svc *service) ContactAccept(ctx context.Context, req *messengertypes.Conta
 	return &messengertypes.ContactAccept_Reply{}, nil
 }
 
-func (svc *service) Interact(ctx context.Context, req *messengertypes.Interact_Request) (*messengertypes.Interact_Reply, error) {
+func (svc *service) Interact(ctx context.Context, req *messengertypes.Interact_Request) (_ *messengertypes.Interact_Reply, err error) {
 	gpk := req.GetConversationPublicKey()
+	payloadType := req.GetType()
+
+	ctx, newTrace, endSection := tyber.Section(ctx, svc.logger, fmt.Sprintf("Interacting with %s on group %s", strings.TrimPrefix(payloadType.String(), "Type"), gpk))
+	defer func() {
+		if err != nil {
+			endSection(err, "")
+		}
+	}()
+
 	if gpk == "" {
 		return nil, errcode.ErrMissingInput
 	}
 
-	svc.logger.Info("interacting", zap.String("public-key", gpk))
-	gpkb, err := b64DecodeBytes(gpk)
+	gpkb, err := messengerutil.B64DecodeBytes(gpk)
 	if err != nil {
 		return nil, errcode.ErrInvalidInput.Wrap(err)
 	}
 
 	payload, err := (&messengertypes.AppMessage{
-		Type:    req.GetType(),
+		Type:    payloadType,
 		Payload: req.GetPayload(),
 	}).UnmarshalPayload()
 	if err != nil {
 		return nil, errcode.ErrInvalidInput.Wrap(err)
 	}
+	tyber.LogStep(ctx, svc.logger, "Unmarshaled payload", tyber.WithJSONDetail("AppMessagePayload", payload))
 
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
-
-	medias, err := svc.db.getMedias(req.GetMediaCids())
+	medias, err := svc.db.GetMedias(req.GetMediaCids())
 	if err != nil {
 		return nil, errcode.ErrDBRead.Wrap(err)
 	}
-	fp, err := req.GetType().MarshalPayload(timestampMs(time.Now()), req.GetTargetCID(), medias, payload)
+
+	fp, err := req.GetType().MarshalPayload(messengerutil.TimestampMs(time.Now()), req.GetTargetCID(), medias, payload)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
+
 	cids := make([][]byte, len(req.GetMediaCids()))
 	for i, mediaCID := range req.GetMediaCids() {
-		cids[i], err = b64DecodeBytes(mediaCID)
+		cids[i], err = messengerutil.B64DecodeBytes(mediaCID)
 		if err != nil {
 			return nil, errcode.ErrDeserialization.Wrap(err)
 		}
 	}
-	reply, err := svc.protocolClient.AppMessageSend(ctx, &protocoltypes.AppMessageSend_Request{GroupPK: gpkb, Payload: fp, AttachmentCIDs: cids})
-	if err != nil {
-		return nil, err
+
+	var cidBytes []byte
+
+	if req.GetMetadata() {
+		reply, err := svc.protocolClient.AppMetadataSend(ctx, &protocoltypes.AppMetadataSend_Request{GroupPK: gpkb, Payload: fp, AttachmentCIDs: cids})
+		if err != nil {
+			return nil, errcode.ErrProtocolSend.Wrap(err)
+		}
+		cidBytes = reply.GetCID()
+	} else {
+		reply, err := svc.protocolClient.AppMessageSend(ctx, &protocoltypes.AppMessageSend_Request{GroupPK: gpkb, Payload: fp, AttachmentCIDs: cids})
+		if err != nil {
+			return nil, errcode.ErrProtocolSend.Wrap(err)
+		}
+		cidBytes = reply.GetCID()
 	}
-	cid, err := ipfscid.Cast(reply.GetCID())
+
+	cid, err := ipfscid.Cast(cidBytes)
 	if err != nil {
 		return nil, errcode.ErrDeserialization.Wrap(err)
 	}
+
+	if payloadType == messengertypes.AppMessage_TypeUserMessage {
+		muts := []tyber.StepMutator{}
+		if newTrace {
+			muts = append(muts, tyber.EndTrace)
+		}
+		tyber.LogStep(ctx, svc.logger, "Waiting for an Acknowledge", tyber.WithDetail("TargetCID", cid.String()))
+		svc.logger.Debug("Subscribing to acks", tyber.FormatSubscribeLogFields(ctx, messengerutil.TyberEventAcknowledgeReceived, []tyber.Detail{
+			{Name: "TargetCID", Description: cid.String()},
+		}, muts...)...)
+	} else if newTrace {
+		tyber.LogTraceEnd(ctx, svc.logger, "Interacted successfully", tyber.WithDetail("CID", cid.String()))
+	}
+
+	go svc.interactionDelayedActions(cid, gpkb)
+
 	return &messengertypes.Interact_Reply{CID: cid.String()}, nil
 }
 
 func (svc *service) AccountGet(ctx context.Context, req *messengertypes.AccountGet_Request) (*messengertypes.AccountGet_Reply, error) {
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
-
-	acc, err := svc.db.getAccount()
+	acc, err := svc.db.GetAccount()
 	if err != nil {
 		return nil, err
 	}
@@ -1074,7 +1080,7 @@ func (svc *service) ConversationOpen(ctx context.Context, req *messengertypes.Co
 
 	ret := messengertypes.ConversationOpen_Reply{}
 
-	conv, updated, err := svc.db.setConversationIsOpenStatus(req.GetGroupPK(), true)
+	conv, updated, err := svc.db.SetConversationIsOpenStatus(req.GetGroupPK(), true)
 
 	if err != nil {
 		return nil, err
@@ -1097,7 +1103,7 @@ func (svc *service) ConversationClose(ctx context.Context, req *messengertypes.C
 
 	ret := messengertypes.ConversationClose_Reply{}
 
-	conv, updated, err := svc.db.setConversationIsOpenStatus(req.GetGroupPK(), false)
+	conv, updated, err := svc.db.SetConversationIsOpenStatus(req.GetGroupPK(), false)
 
 	if err != nil {
 		return nil, err
@@ -1145,10 +1151,10 @@ func (svc *service) ReplicationServiceRegisterGroup(ctx context.Context, req *me
 		return nil, errcode.ErrMissingInput
 	}
 
-	svc.logger.Info("attempting replicating group", zap.String("public-key", gpk))
-	gpkb, err := b64DecodeBytes(gpk)
+	svc.logger.Info("attempting replicating group", logutil.PrivateString("public-key", gpk))
+	gpkb, err := messengerutil.B64DecodeBytes(gpk)
 	if err != nil {
-		svc.logger.Error("failed to decode group pk", zap.String("public-key", gpk), zap.Error(err))
+		svc.logger.Error("failed to decode group pk", logutil.PrivateString("public-key", gpk), zap.Error(err))
 		return nil, errcode.ErrInvalidInput.Wrap(err)
 	}
 
@@ -1158,11 +1164,11 @@ func (svc *service) ReplicationServiceRegisterGroup(ctx context.Context, req *me
 	})
 
 	if err != nil {
-		svc.logger.Error("failed to replicate group", zap.String("public-key", gpk), zap.String("token-id", req.TokenID), zap.Error(err))
+		svc.logger.Error("failed to replicate group", logutil.PrivateString("public-key", gpk), logutil.PrivateString("token-id", req.TokenID), zap.Error(err))
 		return nil, err
 	}
 
-	svc.logger.Info("replicating group", zap.String("public-key", gpk), zap.String("token-id", req.TokenID), zap.Error(err))
+	svc.logger.Info("replicating group", logutil.PrivateString("public-key", gpk), logutil.PrivateString("token-id", req.TokenID), zap.Error(err))
 
 	return &messengertypes.ReplicationServiceRegisterGroup_Reply{}, nil
 }
@@ -1181,17 +1187,8 @@ func (svc *service) BannerQuote(ctx context.Context, req *messengertypes.BannerQ
 	return &ret, nil
 }
 
-func (svc *service) GetUsername(ctx context.Context, req *messengertypes.GetUsername_Request) (*messengertypes.GetUsername_Reply, error) {
-	return &messengertypes.GetUsername_Reply{
-		Username: username.GetUsername(),
-	}, nil
-}
-
 func (svc *service) SendReplyOptions(ctx context.Context, req *messengertypes.SendReplyOptions_Request) (*messengertypes.SendReplyOptions_Reply, error) {
-	svc.handlerMutex.Lock()
-	defer svc.handlerMutex.Unlock()
-
-	payload, err := messengertypes.AppMessage_TypeReplyOptions.MarshalPayload(timestampMs(time.Now()), "", nil, req.Options)
+	payload, err := messengertypes.AppMessage_TypeReplyOptions.MarshalPayload(messengerutil.TimestampMs(time.Now()), "", nil, req.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -1210,11 +1207,11 @@ func (svc *service) ReplicationSetAutoEnable(ctx context.Context, req *messenger
 		return nil, err
 	}
 
-	if err := svc.db.accountSetReplicationAutoEnable(b64EncodeBytes(config.AccountPK), req.Enabled); err != nil {
+	if err := svc.db.AccountSetReplicationAutoEnable(messengerutil.B64EncodeBytes(config.AccountPK), req.Enabled); err != nil {
 		return nil, err
 	}
 
-	acc, err := svc.db.getAccount()
+	acc, err := svc.db.GetAccount()
 	if err != nil {
 		return nil, err
 	}
@@ -1228,7 +1225,7 @@ func (svc *service) ReplicationSetAutoEnable(ctx context.Context, req *messenger
 }
 
 func (svc *service) InstanceExportData(_ *messengertypes.InstanceExportData_Request, server messengertypes.MessengerService_InstanceExportDataServer) error {
-	tmpFile, err := ioutil.TempFile(os.TempDir(), "export-")
+	tmpFile, err := ioutil.TempFile(tempdir.TempDir(), "export-")
 	if err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}
@@ -1247,7 +1244,6 @@ func (svc *service) InstanceExportData(_ *messengertypes.InstanceExportData_Requ
 		} else if err != nil {
 			return errcode.ErrInternal.Wrap(err)
 		}
-
 		if _, err := tmpFile.Write(chunk.ExportedData); err != nil {
 			return errcode.ErrInternal.Wrap(err)
 		}
@@ -1262,7 +1258,7 @@ func (svc *service) InstanceExportData(_ *messengertypes.InstanceExportData_Requ
 	svc.handlerMutex.Lock()
 	defer svc.handlerMutex.Unlock()
 
-	if err := exportMessengerData(tmpFile, svc.db.db, svc.logger); err != nil {
+	if err := exportMessengerData(tmpFile, svc.db); err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}
 
@@ -1285,7 +1281,10 @@ func (svc *service) InstanceExportData(_ *messengertypes.InstanceExportData_Requ
 	}
 }
 
-func (svc *service) MediaPrepare(srv messengertypes.MessengerService_MediaPrepareServer) error {
+func (svc *service) MediaPrepare(srv messengertypes.MessengerService_MediaPrepareServer) (err error) {
+	ctx, _, endSection := tyber.Section(srv.Context(), svc.logger, "Preparing media")
+	defer func() { endSection(err, "") }()
+
 	// read header
 	header, err := srv.Recv()
 	if err != nil {
@@ -1320,21 +1319,21 @@ func (svc *service) MediaPrepare(srv messengertypes.MessengerService_MediaPrepar
 	defer file.Close()
 
 	// upload media and get cid in return
-	cidBytes, err := svc.attachmentPrepare(file)
+	cidBytes, err := svc.attachmentPrepare(ctx, file)
 	if err != nil {
 		return errcode.ErrAttachmentPrepare.Wrap(err)
 	}
-	cid := b64EncodeBytes(cidBytes)
+	cid := messengerutil.B64EncodeBytes(cidBytes)
 
 	svc.handlerMutex.Lock()
 	defer svc.handlerMutex.Unlock()
 
-	return svc.db.tx(func(tx *dbWrapper) error {
+	return svc.db.TX(ctx, func(tx *messengerdb.DBWrapper) error {
 		// add to db
 		media := *header.Info
 		media.CID = cid
 		media.State = messengertypes.Media_StatePrepared
-		added, err := tx.addMedias([]*messengertypes.Media{&media})
+		added, err := tx.AddMedias([]*messengertypes.Media{&media})
 		if err != nil {
 			return errcode.ErrDBWrite.Wrap(err)
 		}
@@ -1342,7 +1341,7 @@ func (svc *service) MediaPrepare(srv messengertypes.MessengerService_MediaPrepar
 		// dispatch event if new
 		if added[0] {
 			if err := svc.dispatcher.StreamEvent(messengertypes.StreamEvent_TypeMediaUpdated, &messengertypes.StreamEvent_MediaUpdated{Media: &media}, true); err != nil {
-				svc.logger.Error("unable to dispatch notification for media", zap.String("cid", media.CID), zap.Error(err))
+				svc.logger.Error("unable to dispatch notification for media", logutil.PrivateString("cid", media.CID), zap.Error(err))
 			}
 		}
 
@@ -1356,14 +1355,17 @@ func (svc *service) MediaPrepare(srv messengertypes.MessengerService_MediaPrepar
 	})
 }
 
-func (svc *service) MediaRetrieve(req *messengertypes.MediaRetrieve_Request, srv messengertypes.MessengerService_MediaRetrieveServer) error {
+func (svc *service) MediaRetrieve(req *messengertypes.MediaRetrieve_Request, srv messengertypes.MessengerService_MediaRetrieveServer) (err error) {
+	ctx, _, endSection := tyber.Section(srv.Context(), svc.logger, "Retrieving media")
+	defer func() { endSection(err, "") }()
+
 	var attachment *io.PipeReader
 	if err := func() error {
 		svc.handlerMutex.Lock()
 		defer svc.handlerMutex.Unlock()
 
 		// prepare header
-		medias, err := svc.db.getMedias([]string{req.GetCid()})
+		medias, err := svc.db.GetMedias([]string{req.GetCid()})
 		if err != nil {
 			return errcode.ErrInvalidInput.Wrap(err)
 		}
@@ -1378,7 +1380,7 @@ func (svc *service) MediaRetrieve(req *messengertypes.MediaRetrieve_Request, srv
 		}
 
 		// open download
-		if attachment, err = svc.attachmentRetrieve(req.GetCid()); err != nil {
+		if attachment, err = svc.attachmentRetrieve(ctx, req.GetCid()); err != nil {
 			return errcode.ErrAttachmentRetrieve.Wrap(err)
 		}
 		return nil
@@ -1403,7 +1405,7 @@ func (svc *service) ConversationLoad(ctx context.Context, request *messengertype
 		return nil, errcode.ErrInvalidInput.Wrap(fmt.Errorf("no conversation pk or ref cid specified"))
 	}
 
-	interactions, medias, err := svc.db.getPaginatedInteractions(request.Options)
+	interactions, medias, err := svc.db.GetPaginatedInteractions(request.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -1418,7 +1420,7 @@ func (svc *service) ConversationLoad(ctx context.Context, request *messengertype
 		}
 		ais := make([]*messengertypes.Interaction, len(interactions))
 		for i, inte := range interactions {
-			if ais[i], err = svc.db.getAugmentedInteraction(inte.CID); err != nil {
+			if ais[i], err = svc.db.GetAugmentedInteraction(inte.CID); err != nil {
 				return nil, errcode.ErrDBRead.Wrap(err)
 			}
 		}
@@ -1434,7 +1436,7 @@ func (svc *service) ConversationLoad(ctx context.Context, request *messengertype
 	} else {
 		svc.logger.Info("sending found interactions", zap.Int("count", len(interactions)))
 		for _, inte := range interactions {
-			if err := svc.streamInteraction(svc.db, inte.CID, false); err != nil {
+			if err := messengerutil.StreamInteraction(svc.dispatcher, svc.db, inte.CID, false); err != nil {
 				return nil, err
 			}
 		}
@@ -1451,9 +1453,9 @@ func (svc *service) ConversationLoad(ctx context.Context, request *messengertype
 }
 
 func (svc *service) MediaGetRelated(ctx context.Context, request *messengertypes.MediaGetRelated_Request) (*messengertypes.MediaGetRelated_Reply, error) {
-	media, err := svc.db.getNextMedia(request.CID, nextMediaOpts{
-		fileNames: request.FileNames,
-		mimeTypes: request.MimeTypes,
+	media, err := svc.db.GetNextMedia(request.CID, messengerdb.NextMediaOpts{
+		FileNames: request.FileNames,
+		MimeTypes: request.MimeTypes,
 	})
 	if err != nil || media == nil {
 		if err != nil {
@@ -1467,7 +1469,7 @@ func (svc *service) MediaGetRelated(ctx context.Context, request *messengertypes
 }
 
 func (svc *service) MessageSearch(ctx context.Context, request *messengertypes.MessageSearch_Request) (*messengertypes.MessageSearch_Reply, error) {
-	results, err := svc.db.interactionsSearch(request.Query, &SearchOptions{
+	results, err := svc.db.InteractionsSearch(request.Query, &messengerdb.SearchOptions{
 		BeforeDate:     int(request.BeforeDate),
 		AfterDate:      int(request.AfterDate),
 		Limit:          int(request.Limit),
@@ -1479,4 +1481,276 @@ func (svc *service) MessageSearch(ctx context.Context, request *messengertypes.M
 	}
 
 	return &messengertypes.MessageSearch_Reply{Results: results}, nil
+}
+
+func (svc *service) TyberHostSearch(request *messengertypes.TyberHostSearch_Request, server messengertypes.MessengerService_TyberHostSearchServer) error {
+	results := make(chan *zeroconf.ServiceEntry)
+
+	go func() {
+		resolver, err := zeroconf.NewResolver(nil)
+		if err != nil {
+			svc.logger.Error("Failed to initialize resolver:", zap.Error(err))
+			close(results)
+			return
+		}
+
+		err = resolver.Browse(server.Context(), "_tyber._tcp", "local.", results)
+		if err != nil {
+			svc.logger.Error("Failed to get results for service:", zap.Error(err))
+			close(results)
+			return
+		}
+	}()
+
+	for result := range results {
+		ipv4Addresses := make([]string, len(result.AddrIPv4))
+		ipv6Addresses := make([]string, len(result.AddrIPv6))
+
+		for i, v := range result.AddrIPv4 {
+			ipv4Addresses[i] = v.String()
+		}
+
+		for i, v := range result.AddrIPv6 {
+			ipv6Addresses[i] = v.String()
+		}
+
+		if err := server.Send(&messengertypes.TyberHostSearch_Reply{
+			Hostname: result.HostName,
+			IPv4:     ipv4Addresses,
+			IPv6:     ipv6Addresses,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// TyberHostAttach tries to attach itself (connect) to a remote Tyber server and then replays a session's logs.
+//
+// When TyberHostAttach is called, it cancels the previous connection if there is one.
+// The function returns quickly after initializing a sidekick goroutine that stays quiet in case of connection issue.
+// If multiple addresses are provided, the function will try them sequentially.
+// If the dial attempt fails for every addresses in the list, the routine will sleep (with backoff) and try again.
+// If at least one connection was successful (successfully sending at least one line), then, the function won't try other addresses and won't try to reconnect.
+func (svc *service) TyberHostAttach(ctx context.Context, request *messengertypes.TyberHostAttach_Request) (*messengertypes.TyberHostAttach_Reply, error) {
+	// close previous session if existing
+	if svc.tyberCleanup != nil {
+		svc.tyberCleanup()
+	}
+
+	// silently quit if no address provided.
+	if len(request.Addresses) == 0 {
+		return &messengertypes.TyberHostAttach_Reply{}, nil
+	}
+
+	// raise an error if attach requested but no log file provided.
+	if svc.logFilePath == "" {
+		return nil, errcode.TODO.Wrap(fmt.Errorf("cannot attach to tyber without specified log path"))
+	}
+
+	backoff := backoff.NewExponentialBackOff()
+	backoff.MaxInterval = time.Minute
+	var succeed bool
+
+	// can be stopped either by calling TyberHostAttach again, or when the svc.Close is called.
+	// we use svc.ctx instead of the request's one, because a TyberHostAttach session belongs to a Messenger session.
+	ctx, cancel := context.WithCancel(svc.ctx)
+	svc.tyberCleanup = cancel
+
+	// open the logfile.
+	logFile, err := os.Open(svc.logFilePath)
+	if err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
+
+	// sidekick goroutine that keeps trying to connect and send logs to a Tyber server.
+	go func() {
+		defer logFile.Close()
+
+		// retry loop (with backoff)
+		for iter := 0; ; iter++ {
+			// check if context is finished
+			if ctx.Err() != nil {
+				return
+			}
+
+			var errs error
+			for _, address := range request.Addresses {
+				var d net.Dialer
+				conn, err := d.DialContext(ctx, "tcp", address)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
+
+				// connection succeed -> don't try other addresses and don't try to reconnect, just quit, timeout or context cancellation.
+				succeed = true
+
+				_, err = io.Copy(conn, ctxio.NewReader(ctx, logFile))
+				if err != nil {
+					svc.logger.Debug("io.Copy failed with Tyber host", zap.Error(err))
+				}
+				return
+			}
+
+			sleepDuration := backoff.NextBackOff()
+
+			svc.logger.Debug(
+				"tyber host attach",
+				zap.Bool("succeed", succeed),
+				zap.Duration("backoff", sleepDuration),
+				zap.Int("iteration", iter),
+				zap.Error(errs),
+			)
+
+			if succeed {
+				// no more attempts
+				return
+			}
+
+			select {
+			case <-time.After(sleepDuration):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return &messengertypes.TyberHostAttach_Reply{}, nil
+}
+
+func (svc *service) PushSetAutoShare(ctx context.Context, request *messengertypes.PushSetAutoShare_Request) (*messengertypes.PushSetAutoShare_Reply, error) {
+	config, err := svc.protocolClient.InstanceGetConfiguration(svc.ctx, &protocoltypes.InstanceGetConfiguration_Request{})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := svc.db.PushSetReplicationAutoShare(messengerutil.B64EncodeBytes(config.AccountPK), request.Enabled); err != nil {
+		return nil, err
+	}
+
+	if request.Enabled {
+		acc, err := svc.db.GetAccount()
+		if err != nil {
+			return nil, errcode.ErrDBRead.Wrap(err)
+		}
+
+		if err := svc.pushDeviceTokenBroadcast(acc); err != nil {
+			return nil, errcode.ErrInternal.Wrap(err)
+		}
+	}
+
+	acc, err := svc.db.GetAccount()
+	if err != nil {
+		return nil, err
+	}
+
+	// dispatch event
+	if err := svc.dispatcher.StreamEvent(messengertypes.StreamEvent_TypeAccountUpdated, &messengertypes.StreamEvent_AccountUpdated{Account: acc}, false); err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
+
+	return &messengertypes.PushSetAutoShare_Reply{}, nil
+}
+
+func (svc *service) interactionDelayedActions(id ipfscid.Cid, groupPK []byte) {
+	// TODO: decouple action from this method
+
+	if !id.Defined() {
+		svc.logger.Error("empty cid supplied")
+		return
+	}
+
+	// TODO: lower delay?
+	time.Sleep(time.Second * 2)
+
+	i, err := svc.db.GetInteractionByCID(id.String())
+	if err != nil {
+		svc.logger.Error("unable to retrieve interaction", zap.Error(err), logutil.PrivateString("cid", id.String()))
+		return
+	}
+
+	if i.Type != messengertypes.AppMessage_TypeUserMessage {
+		// Nothing to do, move along
+		svc.logger.Debug("push: nothing to send, invalid interaction type", logutil.PrivateString("cid", id.String()), zap.String("type", i.Type.String()))
+		return
+	}
+
+	// TODO: avoid pushing acknowledged events
+	// TODO: watch for currently active devices?
+	// svc.handlerMutex.Lock()
+	// defer svc.handlerMutex.Unlock()
+
+	svc.logger.Info("attempting to push interaction", logutil.PrivateString("cid", id.String()))
+	_, err = svc.protocolClient.PushSend(svc.ctx, &protocoltypes.PushSend_Request{
+		CID:            id.Bytes(),
+		GroupPublicKey: groupPK,
+	})
+	if err != nil {
+		svc.logger.Error("unable to push interaction", zap.Error(err), logutil.PrivateString("cid", id.String()))
+		return
+	}
+
+	svc.logger.Info("pushed interaction", logutil.PrivateString("cid", id.String()))
+}
+
+func (svc *service) PushReceive(ctx context.Context, request *messengertypes.PushReceive_Request) (*messengertypes.PushReceive_Reply, error) {
+	svc.handlerMutex.Lock()
+	defer svc.handlerMutex.Unlock()
+
+	return svc.pushReceiver.PushReceive(ctx, request.Payload)
+}
+
+func (svc *service) ListMemberDevices(request *messengertypes.ListMemberDevices_Request, server messengertypes.MessengerService_ListMemberDevicesServer) error {
+	devices, err := svc.db.GetDevicesForMember(request.ConversationPK, request.MemberPK)
+	if err != nil {
+		return nil
+	}
+
+	for _, dev := range devices {
+		if err := server.Send(&messengertypes.ListMemberDevices_Reply{Device: dev}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) PushShareTokenForConversation(ctx context.Context, request *messengertypes.PushShareTokenForConversation_Request) (*messengertypes.PushShareTokenForConversation_Reply, error) {
+	conv, err := svc.db.GetConversationByPK(request.ConversationPK)
+	if err != nil {
+		return nil, errcode.ErrDBRead.Wrap(err)
+	}
+
+	if err := svc.sharePushTokenForConversation(conv); err != nil {
+		return nil, err
+	}
+
+	return &messengertypes.PushShareTokenForConversation_Reply{}, nil
+}
+
+func (svc *service) PushTokenSharedForConversation(request *messengertypes.PushTokenSharedForConversation_Request, server messengertypes.MessengerService_PushTokenSharedForConversationServer) error {
+	tokens, err := svc.db.GetPushTokenSharedForConversation(request.ConversationPK)
+	if err != nil {
+		return errcode.ErrDBRead.Wrap(err)
+	}
+
+	for _, token := range tokens {
+		if err := server.Send(&messengertypes.PushTokenSharedForConversation_Reply{PushToken: token}); err != nil {
+			return errcode.ErrStreamWrite.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) InteractionReactionsForEmoji(ctx context.Context, request *messengertypes.InteractionReactionsForEmoji_Request) (*messengertypes.InteractionReactionsForEmoji_Reply, error) {
+	reactions, err := svc.db.GetInteractionReactionsForEmoji(request.InteractionCID, request.Emoji)
+	if err != nil {
+		return nil, errcode.ErrDBRead.Wrap(err)
+	}
+	return &messengertypes.InteractionReactionsForEmoji_Reply{
+		Reactions: reactions,
+	}, nil
 }

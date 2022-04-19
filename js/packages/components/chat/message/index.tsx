@@ -1,17 +1,21 @@
 import React from 'react'
 import { View } from 'react-native'
-import { Text } from '@ui-kitten/components'
+import { Dictionary } from '@reduxjs/toolkit'
 
-import beapi from '@berty-tech/api'
-import { useMsgrContext } from '@berty-tech/store/hooks'
-import { PersistentOptionsKeys } from '@berty-tech/store/context'
-import { useStyles } from '@berty-tech/styles'
+import beapi from '@berty/api'
+import { pbDateToNum, ParsedInteraction, useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
 
-import { pbDateToNum, timeFormat } from '../../helpers'
+import { timeFormat } from '../../helpers'
 import { MessageInvitation } from './MessageInvitation'
 import { MessageMonitorMetadata } from './MessageMonitorMetadata'
 import { UserMessage } from './UserMessage'
-import { ParsedInteraction } from '@berty-tech/store/types.gen'
+import { useSelector } from 'react-redux'
+import {
+	PersistentOptionsKeys,
+	selectPersistentOptions,
+} from '@berty/redux/reducers/persistentOptions.reducer'
+import { UnifiedText } from '../../shared-components/UnifiedText'
 
 //
 // Message => All messages (group/contact)
@@ -20,23 +24,39 @@ import { ParsedInteraction } from '@berty-tech/store/types.gen'
 export const Message: React.FC<{
 	inte?: ParsedInteraction
 	convKind: beapi.messenger.Conversation.Type
-	members?: { [key: string]: any }
+	members?: Dictionary<beapi.messenger.IMember>
 	convPK: string
 	previousMessage?: ParsedInteraction
 	nextMessage?: ParsedInteraction
 	replyOf?: ParsedInteraction
 	scrollToCid: (cid: string) => void
-}> = ({ inte, convKind, members, previousMessage, nextMessage, convPK, replyOf, scrollToCid }) => {
-	const ctx = useMsgrContext()
-	const [{ text, padding }] = useStyles()
-	if (!inte) {
-		return null
-	}
-	const sentDate = pbDateToNum(inte?.sentDate)
+}> = React.memo(
+	({ inte, convKind, members, previousMessage, nextMessage, convPK, replyOf, scrollToCid }) => {
+		const persistentOptions = useSelector(selectPersistentOptions)
+		const [{ text, padding }] = useStyles()
+		const colors = useThemeColor()
 
-	if (inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage) {
-		return (
-			<>
+		const sentDate = pbDateToNum(inte?.sentDate)
+
+		const textColor = colors['secondary-text']
+		const textStyle = React.useMemo(
+			() => [
+				inte?.isMine ? text.align.right : text.align.left,
+				text.size.tiny,
+				text.light,
+				{ color: textColor },
+			],
+			[text.size, inte?.isMine, text.align.right, text.align.left, text.light, textColor],
+		)
+
+		const viewStyle = React.useMemo(() => [padding.horizontal.medium], [padding.horizontal.medium])
+
+		if (!inte) {
+			return null
+		}
+
+		if (inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage) {
+			return (
 				<UserMessage
 					inte={inte}
 					members={members}
@@ -47,36 +67,28 @@ export const Message: React.FC<{
 					replyOf={replyOf}
 					scrollToCid={scrollToCid}
 				/>
-			</>
-		)
-	} else if (
-		inte.type === beapi.messenger.AppMessage.Type.TypeGroupInvitation &&
-		convKind === beapi.messenger.Conversation.Type.ContactType
-	) {
-		return (
-			<>
-				<View style={[padding.horizontal.medium]}>
-					<Text
-						style={[
-							inte.isMine ? text.align.right : text.align.left,
-							text.color.grey,
-							text.size.scale(11),
-							text.bold.small,
-							text.color.grey,
-						]}
-					>
-						{sentDate ? timeFormat.fmtTimestamp3(sentDate) : ''}
-					</Text>
-				</View>
-				<MessageInvitation message={inte} />
-			</>
-		)
-	} else if (
-		inte.type === beapi.messenger.AppMessage.Type.TypeMonitorMetadata &&
-		ctx?.persistentOptions[PersistentOptionsKeys.Debug].enable
-	) {
-		return <MessageMonitorMetadata inte={inte} />
-	} else {
-		return null
-	}
-}
+			)
+		} else if (
+			inte.type === beapi.messenger.AppMessage.Type.TypeGroupInvitation &&
+			convKind === beapi.messenger.Conversation.Type.ContactType
+		) {
+			return (
+				<>
+					<View style={viewStyle}>
+						<UnifiedText style={textStyle}>
+							{sentDate ? timeFormat.fmtTimestamp3(sentDate) : ''}
+						</UnifiedText>
+					</View>
+					<MessageInvitation message={inte} />
+				</>
+			)
+		} else if (
+			inte.type === beapi.messenger.AppMessage.Type.TypeMonitorMetadata &&
+			persistentOptions[PersistentOptionsKeys.Debug].enable
+		) {
+			return <MessageMonitorMetadata inte={inte} />
+		} else {
+			return null
+		}
+	},
+)

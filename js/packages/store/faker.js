@@ -1,9 +1,9 @@
 import faker from 'faker'
-
-import beapi from '@berty-tech/api'
 import { keyBy, flatten } from 'lodash'
 
-const fakeArray = (length) => new Array(length).fill({})
+import beapi from '@berty/api'
+
+const fakeArray = length => new Array(length).fill({})
 
 const contactStates = [
 	beapi.messenger.Contact.State.Accepted,
@@ -91,50 +91,4 @@ export const fakeMultiMemberConversations = (length, start) => {
 		{ conversations: {}, members: {} },
 	)
 	return payload
-}
-
-export const fakeMessages = (length, conversationList = [], membersListList, start) => {
-	const messageList = flatten(
-		conversationList
-			.map((conversation, i) => {
-				const membersCount = membersListList[i].length
-				if (
-					conversation.type === beapi.messenger.Conversation.Type.MultiMemberType &&
-					membersCount <= 0
-				) {
-					return null
-				}
-				return fakeArray(length).map((_, idx) => {
-					let isMine = true
-					let memberPublicKey = ''
-
-					if (conversation.type === beapi.messenger.Conversation.Type.MultiMemberType) {
-						const memberIndex = Math.floor(Math.random() * (membersCount + 1))
-						if (memberIndex < membersCount) {
-							isMine = false
-							memberPublicKey = membersListList[i][memberIndex].publicKey
-						}
-					} else {
-						isMine = faker.random.boolean()
-					}
-
-					return {
-						cid: `fake_interaction_${i * length + idx + start}`,
-						type: beapi.messenger.AppMessage.Type.TypeUserMessage,
-						conversationPublicKey: conversation.publicKey,
-						memberPublicKey,
-						payload: { body: faker.lorem.sentences() },
-						isMine,
-						sentDate: (
-							Date.now() - Math.floor(Math.random() * (50 * 24 * 60 * 60 * 1000))
-						).toString(),
-						acknowledged: faker.random.boolean(),
-						fake: true,
-					}
-				})
-			})
-			.filter((c) => !!c),
-	)
-	console.log('generated x fake messages:', messageList.length)
-	return messageList
 }

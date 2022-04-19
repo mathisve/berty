@@ -1,9 +1,10 @@
 import { Buffer } from 'buffer'
-import { WelshProtocolServiceClient } from '@berty-tech/grpc-bridge/welsh-clients.gen'
-import beapi from '@berty-tech/api'
-
+import beapi from '@berty/api'
 import emojiSource from 'emoji-datasource'
 import 'string.fromcodepoint'
+
+import { WelshProtocolServiceClient } from '@berty/grpc-bridge/welsh-clients.gen'
+import { Emoji } from '@berty/styles/types'
 
 let cache: { cid: string; prom: Promise<string> }[] = []
 
@@ -41,14 +42,14 @@ export const getSource = async (
 	protocolClient: WelshProtocolServiceClient,
 	cid: string,
 ): Promise<string> => {
-	if (!cache.find((item) => item.cid === cid)) {
+	if (!cache.find(item => item.cid === cid)) {
 		if (cache.length >= 20) {
 			// evict
 			cache = cache.slice(1)
 		}
 		cache.push({ cid, prom: fetchSource(protocolClient, cid) })
 	}
-	const cached = cache.find((item) => item.cid === cid)
+	const cached = cache.find(item => item.cid === cid)
 	if (!cached) {
 		throw new Error('unexpected cache miss')
 	}
@@ -68,13 +69,16 @@ export const getMediaTypeFromMedias = (
 	return type
 }
 
-export const toEmoji = (code: any) => {
+export const emojis: Emoji[] = emojiSource
+
+const toEmoji = (code: any) => {
 	return String.fromCodePoint(...code.split('-').map((u: string) => '0x' + u))
 }
 
 export const getEmojiByName = (name: string) => {
-	const requiredSource = emojiSource.find(
-		(item: any) => item.short_name === name.replaceAll(':', ''),
-	)
+	const requiredSource = emojis.find((item: Emoji) => item.short_name === name.replaceAll(':', ''))
+	if (!requiredSource) {
+		return
+	}
 	return toEmoji(requiredSource?.unified)
 }

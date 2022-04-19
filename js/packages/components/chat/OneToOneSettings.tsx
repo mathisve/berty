@@ -1,88 +1,47 @@
-import React from 'react'
-import { ScrollView, View } from 'react-native'
-import { Text } from '@ui-kitten/components'
+import React, { ComponentProps } from 'react'
+import { ScrollView, View, StatusBar, TouchableOpacity, Platform } from 'react-native'
+import { Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
 
-import beapi from '@berty-tech/api'
-import { ScreenProps, useNavigation } from '@berty-tech/navigation'
-import { useContact, useConversation } from '@berty-tech/store/hooks'
-import { useStyles } from '@berty-tech/styles'
+import beapi from '@berty/api'
+import { ScreenFC } from '@berty/navigation'
+import { useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
+import { useContact, useConversation } from '@berty/hooks'
 
-import HeaderSettings from '../shared-components/Header'
-import { ButtonSetting, ButtonSettingRow } from '../shared-components/SettingsButtons'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
+import { ButtonSetting } from '../shared-components/SettingsButtons'
 import { ContactAvatar } from '../avatars'
-
-//
-// OneToOneSettings
-//
-
-// Styles
-const useStylesOneToOne = () => {
-	const [{ flex, height, margin }] = useStyles()
-	return {
-		headerAvatar: flex.large,
-		firstHeaderButton: [margin.right.scale(20), height(90)],
-		secondHeaderButton: [margin.right.scale(20), height(90)],
-		thirdHeaderButton: height(90),
-	}
-}
+import EnableNotificationsButton from '@berty/components/chat/EnableNotificationsButton'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const OneToOneHeader: React.FC<{ contact: any }> = ({ contact }) => {
-	const _styles = useStylesOneToOne()
-	const [{ text, padding }, { scaleSize }] = useStyles()
+	const [{ text, padding, flex }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 
 	return (
-		<View style={[_styles.headerAvatar, { alignItems: 'center' }]}>
+		<View style={[flex.large, { alignItems: 'center' }]}>
 			<ContactAvatar size={100 * scaleSize} publicKey={contact.publicKey} pressable />
-			<Text
+			<UnifiedText
 				numberOfLines={1}
-				style={[text.size.scale(18), text.color.white, text.align.center, padding.top.small]}
+				style={[
+					text.size.scale(18),
+					text.align.center,
+					padding.top.small,
+					{ color: colors['reverted-main-text'] },
+				]}
 			>
 				{contact.displayName}
-			</Text>
+			</UnifiedText>
 		</View>
 	)
 }
 
-const OneToOneHeaderButtons: React.FC<{}> = () => {
-	const _styles = useStylesOneToOne()
-	const [{ padding, color }] = useStyles()
-	const { t } = useTranslation()
-	return (
-		<View style={[padding.horizontal.medium, padding.top.medium]}>
-			<ButtonSettingRow
-				state={[
-					{
-						name: t('chat.one-to-one-settings.header-left-button'),
-						icon: 'search-outline',
-						color: color.blue,
-						style: _styles.firstHeaderButton,
-						disabled: true,
-					},
-					{
-						name: t('chat.one-to-one-settings.header-middle-button'),
-						icon: 'phone-outline',
-						color: color.green,
-						style: _styles.secondHeaderButton,
-						disabled: true,
-					},
-					{
-						name: t('chat.one-to-one-settings.header-right-button'),
-						icon: 'upload',
-						color: color.blue,
-						style: _styles.thirdHeaderButton,
-						disabled: true,
-					},
-				]}
-			/>
-		</View>
-	)
-}
-
-const OneToOneBody: React.FC<any> = ({ publicKey, isIncoming }) => {
-	const [{ padding, color }] = useStyles()
-	const navigation = useNavigation()
+const OneToOneBody: React.FC<{
+	publicKey: string
+	isIncoming: boolean
+	navigation: ComponentProps<typeof OneToOneSettings>['navigation']
+}> = ({ publicKey, isIncoming, navigation }) => {
+	const [{ padding }] = useStyles()
 	const { t } = useTranslation()
 
 	return (
@@ -90,79 +49,76 @@ const OneToOneBody: React.FC<any> = ({ publicKey, isIncoming }) => {
 			<ButtonSetting
 				name={t('chat.one-to-one-settings.media-button')}
 				icon='image-outline'
-				onPress={() => navigation.navigate.chat.sharedMedias({ convPk: publicKey })}
+				onPress={() => navigation.navigate('Chat.SharedMedias', { convPk: publicKey })}
 			/>
-			<ButtonSetting
-				name={t('chat.one-to-one-settings.notifications-button')}
-				icon='bell-outline'
-				toggled
-				disabled
-			/>
-			<ButtonSetting
-				name={t('chat.one-to-one-settings.mutual-button')}
-				icon='users'
-				iconPack='custom'
-				state={{ value: '3 mutuals', color: color.blue, bgColor: color.light.blue }}
-				disabled
-			/>
-			{!isIncoming && (
+			{Platform.OS !== 'web' && <EnableNotificationsButton conversationPk={publicKey} />}
+			{!isIncoming && Platform.OS !== 'web' && (
 				<ButtonSetting
 					name={t('chat.one-to-one-settings.save-button')}
 					icon='cloud-upload-outline'
 					iconSize={30}
 					actionIcon='arrow-ios-forward'
 					onPress={() => {
-						navigation.navigate.chat.replicateGroupSettings({ convId: publicKey })
+						navigation.navigate('Chat.ReplicateGroupSettings', { convId: publicKey })
 					}}
 				/>
 			)}
-			<ButtonSetting
-				name={t('chat.one-to-one-settings.erase-button')}
-				icon='message-circle-outline'
-				iconColor={color.red}
-				disabled
-			/>
 		</View>
 	)
 }
 
-export const OneToOneSettings: React.FC<ScreenProps.Chat.OneToOneSettings> = ({
+export const OneToOneSettings: ScreenFC<'Chat.OneToOneSettings'> = ({
 	route: { params },
+	navigation,
 }) => {
-	const { goBack, navigate } = useNavigation()
-	const [{ flex, background, padding }] = useStyles()
+	const [{ padding }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 	const { convId } = params
 	const conv = useConversation(convId)
 	const contact = useContact(conv?.contactPublicKey)
+
+	React.useLayoutEffect(() => {
+		navigation.setOptions({
+			headerRight: () => (
+				<TouchableOpacity
+					onPress={() =>
+						navigation.navigate('Chat.ContactSettings', { contactId: conv?.contactPublicKey || '' })
+					}
+				>
+					<Icon
+						name='more-horizontal-outline'
+						width={35 * scaleSize}
+						height={35 * scaleSize}
+						fill={colors['reverted-main-text']}
+					/>
+				</TouchableOpacity>
+			),
+		})
+	})
+
 	if (!(conv && conv.type === beapi.messenger.Conversation.Type.ContactType && contact)) {
-		goBack()
+		navigation.goBack()
 		return null
 	}
 	const isIncoming = contact && contact.state === beapi.messenger.Contact.State.IncomingRequest
 
 	return (
 		<>
-			<View style={[flex.tiny]}>
+			<View style={{ flex: 1 }}>
+				<StatusBar backgroundColor={colors['background-header']} barStyle='light-content' />
 				<ScrollView
-					style={[flex.tiny, background.white]}
-					contentContainerStyle={[padding.bottom.huge]}
+					style={{ backgroundColor: colors['main-background'] }}
 					bounces={false}
+					contentContainerStyle={[padding.bottom.medium]}
 				>
-					<SwipeNavRecognizer>
-						<HeaderSettings
-							action={() =>
-								navigate.chat.contactSettings({ contactId: conv.contactPublicKey || '' })
-							}
-							actionIcon='more-horizontal-outline'
-							undo={goBack}
-						>
-							<View>
-								<OneToOneHeader contact={contact} />
-								<OneToOneHeaderButtons />
-							</View>
-						</HeaderSettings>
-						<OneToOneBody {...conv} isIncoming={isIncoming} />
-					</SwipeNavRecognizer>
+					<View style={[padding.medium, { backgroundColor: colors['background-header'] }]}>
+						<OneToOneHeader contact={contact} />
+					</View>
+					<OneToOneBody
+						publicKey={conv.publicKey || ''}
+						isIncoming={isIncoming}
+						navigation={navigation}
+					/>
 				</ScrollView>
 			</View>
 		</>

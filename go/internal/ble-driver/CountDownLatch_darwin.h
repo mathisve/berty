@@ -13,13 +13,16 @@
 
 @interface CountDownLatch : NSObject
 
-@property (nonatomic, assign) int count;
-@property (atomic, readwrite, strong) dispatch_semaphore_t semaphore;
+@property (nonatomic, assign, readwrite) NSInteger count;
+@property (atomic, strong, readwrite) dispatch_semaphore_t semaphore;
 @property (nonatomic, strong) dispatch_queue_t dispatch_queue;
+@property (readwrite) BOOL timeout;
 
-- (instancetype)init:(int)count;
+- (instancetype)initCount:(NSInteger)count;
+- (void)incrementCount;
 - (void)countDown;
 - (void)await;
+- (void)await:(NSUInteger)timeout withCancelBlock:(void (^)(void))callback;
 
 @end
 

@@ -2,6 +2,7 @@ package grpcutil
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 
@@ -16,10 +17,10 @@ import (
 const BertyCustomPrefix = 0xbe00
 
 const (
-	P_GRPC           = BertyCustomPrefix + 0x0002 //nolint:golint
-	P_GRPC_WEB       = BertyCustomPrefix + 0x0004 //nolint:golint
-	P_GRPC_WEBSOCKET = BertyCustomPrefix + 0x0008 //nolint:golint
-	P_GRPC_GATEWAY   = BertyCustomPrefix + 0x0016 //nolint:golint
+	P_GRPC           = BertyCustomPrefix + 0x0002 //nolint:revive
+	P_GRPC_WEB       = BertyCustomPrefix + 0x0004 //nolint:revive
+	P_GRPC_WEBSOCKET = BertyCustomPrefix + 0x0008 //nolint:revive
+	P_GRPC_GATEWAY   = BertyCustomPrefix + 0x0016 //nolint:revive
 )
 
 var protos = []ma.Protocol{
@@ -106,6 +107,15 @@ func (l *listener) GRPCMultiaddr() ma.Multiaddr {
 type Server struct {
 	GRPCServer *grpc.Server
 	GatewayMux *grpcgw.ServeMux
+	servers    []io.Closer
+}
+
+func (s *Server) Close() error {
+	for _, s := range s.servers {
+		s.Close()
+	}
+
+	return nil
 }
 
 func (s *Server) Serve(l Listener) error {
@@ -116,6 +126,7 @@ func (s *Server) Serve(l Listener) error {
 		switch c.Protocol().Code {
 		case P_GRPC:
 			serve = s.GRPCServer.Serve
+
 		case P_GRPC_WEB, P_GRPC_WEBSOCKET:
 			wgrpc := grpcweb.WrapServer(s.GRPCServer,
 				grpcweb.WithOriginFunc(func(string) bool { return true }), // @FIXME: this is very insecure
@@ -127,6 +138,7 @@ func (s *Server) Serve(l Listener) error {
 			}
 
 			serve = serverWeb.Serve
+			s.servers = append(s.servers, &serverWeb)
 
 		case P_GRPC_GATEWAY:
 			if s.GatewayMux == nil {
@@ -138,6 +150,7 @@ func (s *Server) Serve(l Listener) error {
 			}
 
 			serve = gatewayServer.Serve
+			s.servers = append(s.servers, &gatewayServer)
 
 		default:
 			return true // continue

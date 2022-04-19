@@ -10,20 +10,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ipfs/go-datastore"
 	sync_ds "github.com/ipfs/go-datastore/sync"
-	badger "github.com/ipfs/go-ds-badger"
 	"github.com/juju/fslock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
+	"berty.tech/berty/v2/go/internal/accountutils"
 	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/internal/testutil"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
+	"berty.tech/go-orbit-db/iface"
 )
 
-func testAddBerty(ctx context.Context, t *testing.T, node ipfsutil.CoreAPIMock, g *protocoltypes.Group, pathBase string, amountToAdd, amountCurrentlyPresent int) {
+func testAddBerty(ctx context.Context, t *testing.T, node ipfsutil.CoreAPIMock, g *protocoltypes.Group, pathBase string, storageKey []byte, storageSalt []byte, amountToAdd, amountCurrentlyPresent int) {
 	t.Helper()
-	testutil.FilterSpeed(t, testutil.Slow)
+	testutil.FilterSpeed(t, testutil.Fast)
+	t.Logf("TestAddBerty: amountToAdd: %d, amountCurrentlyPresent: %d\n", amountToAdd, amountCurrentlyPresent)
 
 	api := node.API()
 	ctx, cancel := context.WithCancel(ctx)
@@ -35,67 +37,50 @@ func testAddBerty(ctx context.Context, t *testing.T, node ipfsutil.CoreAPIMock, 
 
 	defer lock.Unlock()
 
-	dsPathBase := path.Join(pathBase, "badger")
-
-	for _, dirPath := range []string{dsPathBase} {
-		_, err := os.Stat(dirPath)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				panic(err)
-			}
-			if err := os.MkdirAll(dirPath, 0o700); err != nil {
-				panic(err)
-			}
-		}
-	}
-
-	var baseDS datastore.Batching
-	baseDS, err = badger.NewDatastore(dsPathBase, nil)
+	baseDS, err := accountutils.GetRootDatastoreForPath(pathBase, storageKey, storageSalt, zap.NewNop())
 	require.NoError(t, err)
-
-	defer baseDS.Close()
 
 	baseDS = sync_ds.MutexWrap(baseDS)
 
-	defer baseDS.Close()
+	defer testutil.Close(t, baseDS)
 
-	odb, err := NewBertyOrbitDB(ctx, api, &NewOrbitDBOptions{Datastore: baseDS})
+	odb, err := NewBertyOrbitDB(ctx, api, &NewOrbitDBOptions{
+		Datastore: baseDS,
+	})
 	require.NoError(t, err)
 
-	defer odb.Close()
+	defer testutil.Close(t, odb)
 
-	gc, err := odb.openGroup(ctx, g, nil)
+	replicate := false
+	gc, err := odb.OpenGroup(ctx, g, &iface.CreateDBOptions{
+		Replicate: &replicate,
+	})
 	require.NoError(t, err)
 
-	defer gc.Close()
+	defer testutil.Close(t, gc)
 
 	err = ActivateGroupContext(ctx, gc, nil)
 	require.NoError(t, err)
 
 	wg := sync.WaitGroup{}
 	wg.Add(amountToAdd * 2)
-	wg.Add(1)
 
 	amountCurrentlyFound := 0
 
-	go func() {
-		messages, err := gc.MessageStore().ListEvents(ctx, nil, nil, false)
-		require.NoError(t, err)
+	messages, err := gc.MessageStore().ListEvents(ctx, nil, nil, false)
+	require.NoError(t, err)
 
-		for range messages {
-			amountCurrentlyFound++
-		}
-		wg.Done()
-	}()
+	for range messages {
+		amountCurrentlyFound++
+	}
+
+	sub, err := gc.MessageStore().EventBus().Subscribe(new(protocoltypes.GroupMessageEvent))
+	require.NoError(t, err)
+	defer sub.Close()
 
 	// Watch for incoming new messages
 	go func() {
-		for e := range gc.MessageStore().Subscribe(ctx) {
-			_, ok := e.(*protocoltypes.GroupMessageEvent)
-			if !ok {
-				continue
-			}
-
+		for range sub.Out() {
 			wg.Done()
 		}
 	}()
@@ -103,17 +88,24 @@ func testAddBerty(ctx context.Context, t *testing.T, node ipfsutil.CoreAPIMock, 
 	_, err = gc.MetadataStore().AddDeviceToGroup(ctx)
 	require.NoError(t, err)
 
-	<-time.After(time.Millisecond * 2000)
-
 	for i := 0; i < amountToAdd; i++ {
 		_, err := gc.MessageStore().AddMessage(ctx, []byte(fmt.Sprintf("%d", i)), nil)
 		require.NoError(t, err)
 		wg.Done()
 	}
 
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
 
-	require.Equal(t, amountCurrentlyFound, amountCurrentlyPresent)
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+	}
+
+	require.Equal(t, amountCurrentlyPresent, amountCurrentlyFound)
 }
 
 func TestAddBerty(t *testing.T) {
@@ -146,10 +138,13 @@ func TestAddBerty(t *testing.T) {
 	g, _, err := NewGroupMultiMember()
 	require.NoError(t, err)
 
-	testAddBerty(ctx, t, api, g, pathBase, 20, 0)
-	testAddBerty(ctx, t, api, g, pathBase, 0, 20)
-	testAddBerty(ctx, t, api, g, pathBase, 20, 20)
-	testAddBerty(ctx, t, api, g, pathBase, 0, 40)
+	storageKey := []byte("42424242424242424242424242424242")
+	storageSalt := []byte("2121212121212121")
+
+	testAddBerty(ctx, t, api, g, pathBase, storageKey, storageSalt, 20, 0)
+	testAddBerty(ctx, t, api, g, pathBase, storageKey, storageSalt, 0, 20)
+	testAddBerty(ctx, t, api, g, pathBase, storageKey, storageSalt, 20, 20)
+	testAddBerty(ctx, t, api, g, pathBase, storageKey, storageSalt, 0, 40)
 
 	// FIXME: use github.com/stretchr/testify/suite
 }

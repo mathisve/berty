@@ -1,4 +1,4 @@
-package bertyprotocol
+package bertyprotocol_test
 
 import (
 	"bytes"
@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,56 +21,60 @@ import (
 	"go.uber.org/zap"
 
 	"berty.tech/berty/v2/go/internal/testutil"
-	"berty.tech/berty/v2/go/internal/tracer"
+	"berty.tech/berty/v2/go/pkg/authtypes"
+	"berty.tech/berty/v2/go/pkg/bertyauth"
+	"berty.tech/berty/v2/go/pkg/bertyprotocol"
+	"berty.tech/berty/v2/go/pkg/bertyreplication"
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
+	"berty.tech/berty/v2/go/pkg/replicationtypes"
 )
 
 type testCase struct {
 	Name           string
 	NumberOfClient int
-	ConnectFunc    ConnectTestingProtocolFunc
+	ConnectFunc    bertyprotocol.ConnectTestingProtocolFunc
 	Speed          testutil.Speed
 	Stability      testutil.Stability
 	Timeout        time.Duration
 }
 
-type testFunc func(context.Context, *testing.T, ...*TestingProtocol)
+type testFunc func(context.Context, *testing.T, ...*bertyprotocol.TestingProtocol)
 
 // Tests
 
 func TestScenario_CreateMultiMemberGroup(t *testing.T) {
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"3 clients/connectInLine", 3, ConnectInLine, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 20},
-		{"5 clients/connectInLine", 5, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 20},
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"8 clients/connectInLine", 8, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 40},
-		{"10 clients/connectInLine", 10, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 40},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"3 clients/connectInLine", 3, bertyprotocol.ConnectInLine, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 20},
+		{"5 clients/connectInLine", 5, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 20},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"8 clients/connectInLine", 8, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 40},
+		{"10 clients/connectInLine", 10, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 40},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		createMultiMemberGroup(ctx, t, tps...)
 	})
 }
 
 func TestScenario_MessageMultiMemberGroup(t *testing.T) {
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"3 clients/connectInLine", 3, ConnectInLine, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 20},
-		{"5 clients/connectInLine", 5, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 20},
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"8 clients/connectInLine", 8, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 40},
-		{"10 clients/connectInLine", 10, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 40},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"3 clients/connectInLine", 3, bertyprotocol.ConnectInLine, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 20},
+		{"5 clients/connectInLine", 5, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 20},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"8 clients/connectInLine", 8, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 40},
+		{"10 clients/connectInLine", 10, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 40},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		// Create MultiMember Group
 		groupID := createMultiMemberGroup(ctx, t, tps...)
 
@@ -82,22 +84,43 @@ func TestScenario_MessageMultiMemberGroup(t *testing.T) {
 	})
 }
 
+//
+//func TestScenario_MessageMultiMemberGroup2(t *testing.T) {
+//	cases := []testCase{
+//		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Stable, time.Second * 60},
+//	}
+//
+//	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+//		// Create MultiMember Group
+//		groupID := createMultiMemberGroup(ctx, t, tps...)
+//
+//		const messageCount = 100
+//		// Each member sends 3 messages on MultiMember Group
+//		messages := make([]string, messageCount)
+//		for i := 0; i < messageCount; i++ {
+//			messages[i] = fmt.Sprintf("test%d", i)
+//		}
+//
+//		sendMessageOnGroup(ctx, t, tps, tps, groupID, messages)
+//	})
+//}
+
 func TestScenario_MessageSeveralMultiMemberGroups(t *testing.T) {
 	const ngroup = 3
 
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"3 clients/connectInLine", 3, ConnectInLine, testutil.Fast, testutil.Unstable, time.Second * 10},
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 20},
-		{"5 clients/connectInLine", 5, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 20},
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"8 clients/connectInLine", 8, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 40},
-		{"10 clients/connectInLine", 10, ConnectInLine, testutil.Slow, testutil.Unstable, time.Second * 40},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"3 clients/connectInLine", 3, bertyprotocol.ConnectInLine, testutil.Fast, testutil.Flappy, time.Second * 10},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 20},
+		{"5 clients/connectInLine", 5, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 20},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"8 clients/connectInLine", 8, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 40},
+		{"10 clients/connectInLine", 10, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Flappy, time.Second * 40},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		for i := 0; i < ngroup; i++ {
 			t.Logf("===== MultiMember Group #%d =====", i+1)
 			// Create MultiMember Group
@@ -112,28 +135,28 @@ func TestScenario_MessageSeveralMultiMemberGroups(t *testing.T) {
 
 func TestScenario_AddContact(t *testing.T) {
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 20}, // marked as "unstable" because it failed multiple times on the CI recently
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 20}, // marked as "unstable" because it failed multiple times on the CI recently
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 30}, // marked as "unstable" because it failed multiple times on the CI recently
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 40}, // marked as "unstable" because it failed multiple times on the CI recently
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 60},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 20},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 20},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 40},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 60},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		addAsContact(ctx, t, tps, tps)
 	})
 }
 
 func TestScenario_MessageContactGroup(t *testing.T) {
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 20},
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Unstable, time.Second * 20},
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Unstable, time.Second * 30},
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 40},
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 60},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 20},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Flappy, time.Second * 20},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Flappy, time.Second * 30},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 40},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 60},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		// Add accounts as contacts
 		addAsContact(ctx, t, tps, tps)
 
@@ -145,10 +168,27 @@ func TestScenario_MessageContactGroup(t *testing.T) {
 
 func TestScenario_MessageAccountGroup(t *testing.T) {
 	cases := []testCase{
-		{"1 client/connectAll", 1, ConnectAll, testutil.Fast, testutil.Stable, time.Second * 10},
+		{"1 client/connectAll", 1, bertyprotocol.ConnectAll, testutil.Fast, testutil.Stable, time.Second * 10},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
+		// Get account config
+		config, err := tps[0].Client.InstanceGetConfiguration(ctx, &protocoltypes.InstanceGetConfiguration_Request{})
+		require.NoError(t, err)
+		require.NotNil(t, config)
+
+		// Send messages on account group
+		messages := []string{"test1", "test2", "test3"}
+		sendMessageOnGroup(ctx, t, tps, tps, config.AccountGroupPK, messages)
+	})
+}
+
+func TestScenario_MessageAccountGroup_NonMocked(t *testing.T) {
+	cases := []testCase{
+		{"1 client/connectAll", 1, bertyprotocol.ConnectAll, testutil.Fast, testutil.Stable, time.Second * 10},
+	}
+
+	testingScenarioNonMocked(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		// Get account config
 		config, err := tps[0].Client.InstanceGetConfiguration(ctx, &protocoltypes.InstanceGetConfiguration_Request{})
 		require.NoError(t, err)
@@ -162,18 +202,18 @@ func TestScenario_MessageAccountGroup(t *testing.T) {
 
 func TestScenario_MessageAccountAndMultiMemberGroups(t *testing.T) {
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
-		{"3 clients/connectInLine", 3, ConnectInLine, testutil.Fast, testutil.Broken, time.Second * 10},
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 20},
-		{"5 clients/connectInLine", 5, ConnectInLine, testutil.Slow, testutil.Broken, time.Second * 20},
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 30},
-		{"8 clients/connectInLine", 8, ConnectInLine, testutil.Slow, testutil.Broken, time.Second * 30},
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 40},
-		{"10 clients/connectInLine", 10, ConnectInLine, testutil.Slow, testutil.Broken, time.Second * 40},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
+		{"3 clients/connectInLine", 3, bertyprotocol.ConnectInLine, testutil.Fast, testutil.Broken, time.Second * 10},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 20},
+		{"5 clients/connectInLine", 5, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Broken, time.Second * 20},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 30},
+		{"8 clients/connectInLine", 8, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Broken, time.Second * 30},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 40},
+		{"10 clients/connectInLine", 10, bertyprotocol.ConnectInLine, testutil.Slow, testutil.Broken, time.Second * 40},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		t.Log("===== Send Messages on MultiMember Group =====")
 		// Create MultiMember Group
 		mmGroup := createMultiMemberGroup(ctx, t, tps...)
@@ -192,7 +232,7 @@ func TestScenario_MessageAccountAndMultiMemberGroups(t *testing.T) {
 
 			// Send messages on account group
 			messages = []string{"account1", "account2", "account3"}
-			sendMessageOnGroup(ctx, t, []*TestingProtocol{account}, []*TestingProtocol{account}, config.AccountGroupPK, messages)
+			sendMessageOnGroup(ctx, t, []*bertyprotocol.TestingProtocol{account}, []*bertyprotocol.TestingProtocol{account}, config.AccountGroupPK, messages)
 		}
 
 		t.Log("===== Send Messages again on MultiMember Group =====")
@@ -204,14 +244,14 @@ func TestScenario_MessageAccountAndMultiMemberGroups(t *testing.T) {
 
 func TestScenario_MessageAccountAndContactGroups(t *testing.T) {
 	cases := []testCase{
-		{"2 clients/connectAll", 2, ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
-		{"3 clients/connectAll", 3, ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
-		{"5 clients/connectAll", 5, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 20},
-		{"8 clients/connectAll", 8, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 30},
-		{"10 clients/connectAll", 10, ConnectAll, testutil.Slow, testutil.Broken, time.Second * 40},
+		{"2 clients/connectAll", 2, bertyprotocol.ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
+		{"3 clients/connectAll", 3, bertyprotocol.ConnectAll, testutil.Fast, testutil.Broken, time.Second * 10},
+		{"5 clients/connectAll", 5, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 20},
+		{"8 clients/connectAll", 8, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 30},
+		{"10 clients/connectAll", 10, bertyprotocol.ConnectAll, testutil.Slow, testutil.Broken, time.Second * 40},
 	}
 
-	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*TestingProtocol) {
+	testingScenario(t, cases, func(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) {
 		t.Log("===== Send Messages on Contact Group =====")
 		// Add accounts as contacts
 		addAsContact(ctx, t, tps, tps)
@@ -229,7 +269,7 @@ func TestScenario_MessageAccountAndContactGroups(t *testing.T) {
 
 			// Send messages on account group
 			messages = []string{"account1", "account2", "account3"}
-			sendMessageOnGroup(ctx, t, []*TestingProtocol{account}, []*TestingProtocol{account}, config.AccountGroupPK, messages)
+			sendMessageOnGroup(ctx, t, []*bertyprotocol.TestingProtocol{account}, []*bertyprotocol.TestingProtocol{account}, config.AccountGroupPK, messages)
 		}
 
 		t.Log("===== Send Messages again on Contact Group =====")
@@ -240,34 +280,37 @@ func TestScenario_MessageAccountAndContactGroups(t *testing.T) {
 }
 
 func TestScenario_ReplicateMessage(t *testing.T) {
-	testutil.FilterStabilityAndSpeed(t, testutil.Unstable, testutil.Slow)
+	testutil.FilterStabilityAndSpeed(t, testutil.Stable, testutil.Slow)
 
-	ctx, cancel, mn, rdvPeer := testHelperIPFSSetUp(t)
+	ctx, cancel, mn, rdvPeer := bertyprotocol.TestHelperIPFSSetUp(t)
 	defer cancel()
 
 	dsA := dsync.MutexWrap(ds.NewMapDatastore())
-	nodeA, closeNodeA := NewTestingProtocol(ctx, t, &TestingOpts{
+	nodeA, closeNodeA := bertyprotocol.NewTestingProtocol(ctx, t, &bertyprotocol.TestingOpts{
 		Mocknet: mn,
 		RDVPeer: rdvPeer.Peerstore().PeerInfo(rdvPeer.ID()),
 	}, dsA)
 	defer closeNodeA()
 
 	dsB := dsync.MutexWrap(ds.NewMapDatastore())
-	nodeB, closeNodeB := NewTestingProtocol(ctx, t, &TestingOpts{
+	nodeB, closeNodeB := bertyprotocol.NewTestingProtocol(ctx, t, &bertyprotocol.TestingOpts{
 		Mocknet: mn,
 		RDVPeer: rdvPeer.Peerstore().PeerInfo(rdvPeer.ID()),
 	}, dsB)
 	defer closeNodeB()
 
-	tokenSecret, tokenPK, tokenSK := helperGenerateTokenIssuerSecrets(t)
+	tokenSecret, tokenPK, tokenSK := bertyauth.HelperGenerateTokenIssuerSecrets(t)
 
-	replPeer, cancel := NewReplicationMockedPeer(ctx, t, tokenSecret, tokenPK, &TestingOpts{
+	replPeer, cancel := bertyreplication.NewReplicationMockedPeer(ctx, t, tokenSecret, tokenPK, &bertyprotocol.TestingOpts{
 		Mocknet: mn,
 		RDVPeer: rdvPeer.Peerstore().PeerInfo(rdvPeer.ID()),
 	})
 	defer cancel()
 
 	err := mn.LinkAll()
+	require.NoError(t, err)
+
+	err = mn.ConnectAllButSelf()
 	require.NoError(t, err)
 
 	for _, net := range mn.Nets() {
@@ -290,22 +333,40 @@ func TestScenario_ReplicateMessage(t *testing.T) {
 	// token, err := issuer.IssueToken([]string{ServiceReplicationID})
 	// require.NoError(t, err)
 	//
-	// _, err = nodeA.Service.(*service).accountGroup.metadataStore.SendAccountServiceTokenAdded(ctx, &protocoltypes.ServiceToken{
-	// 	Token: token,
-	// 	SupportedServices: []*protocoltypes.ServiceTokenSupportedService{
-	// 		{
-	// 			ServiceType:     ServiceReplicationID,
-	// 			ServiceEndpoint: "", // TODO
-	// 		},
-	// 	},
+	// _, err = nodeA.Service.(*service).accountGroup.MetadataStore.SendAccountServiceTokenAdded(ctx, &protocoltypes.ServiceToken{
+	//	Token: token,
+	//	SupportedServices: []*protocoltypes.ServiceTokenSupportedService{
+	//		{
+	//			ServiceType:     ServiceReplicationID,
+	//			ServiceEndpoint: "", // TODO
+	//		},
+	//	},
 	// })
 	// require.NoError(t, err)
 
-	groupReplicable, err := group.FilterForReplication()
+	groupReplicable, err := bertyprotocol.FilterGroupForReplication(group)
 	require.NoError(t, err)
 
-	// TODO: handle auth
-	_, err = replPeer.Service.ReplicateGroup(ctx, &protocoltypes.ReplicationServiceReplicateGroup_Request{
+	subCtx := context.WithValue(ctx, authtypes.ContextTokenHashField, "token1")
+	subCtx = context.WithValue(subCtx, authtypes.ContextTokenIssuerField, "issuer1")
+
+	_, err = replPeer.Service.ReplicateGroup(subCtx, &replicationtypes.ReplicationServiceReplicateGroup_Request{
+		Group: groupReplicable,
+	})
+	require.NoError(t, err)
+
+	// Replicating using same token should raise an error
+	_, err = replPeer.Service.ReplicateGroup(subCtx, &replicationtypes.ReplicationServiceReplicateGroup_Request{
+		Group: groupReplicable,
+	})
+	require.Error(t, err)
+	require.True(t, errcode.Is(err, errcode.ErrDBEntryAlreadyExists))
+
+	subCtx = context.WithValue(ctx, authtypes.ContextTokenHashField, "token2")
+	subCtx = context.WithValue(subCtx, authtypes.ContextTokenIssuerField, "issuer1")
+
+	// Replicating using another token should not do anything but no error should be thrown
+	_, err = replPeer.Service.ReplicateGroup(subCtx, &replicationtypes.ReplicationServiceReplicateGroup_Request{
 		Group: groupReplicable,
 	})
 	require.NoError(t, err)
@@ -322,6 +383,8 @@ func TestScenario_ReplicateMessage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	time.Sleep(time.Millisecond * 250)
+
 	closeNodeB()
 
 	_, err = nodeA.Service.AppMessageSend(ctx, &protocoltypes.AppMessageSend_Request{
@@ -334,23 +397,25 @@ func TestScenario_ReplicateMessage(t *testing.T) {
 
 	closeNodeA()
 
-	nodeB, closeNodeB = NewTestingProtocol(ctx, t, &TestingOpts{
+	nodeB, closeNodeB = bertyprotocol.NewTestingProtocol(ctx, t, &bertyprotocol.TestingOpts{
 		Mocknet: mn,
 		RDVPeer: rdvPeer.Peerstore().PeerInfo(rdvPeer.ID()),
 	}, dsB)
 	defer closeNodeB()
 
+	err = mn.LinkAll()
+	require.NoError(t, err)
+
+	err = mn.ConnectAllButSelf()
+	require.NoError(t, err)
+
 	_, err = nodeB.Service.ActivateGroup(ctx, &protocoltypes.ActivateGroup_Request{
 		GroupPK: group.PublicKey,
 	})
 
-	// TODO: list messages properly
-	gc, err := nodeB.Service.(*service).getContextGroupForID(group.PublicKey)
-	require.NoError(t, err)
-
 	time.Sleep(time.Second * 5)
 
-	msgCh, err := gc.messageStore.ListEvents(ctx, nil, nil, false)
+	msgList, err := nodeB.Client.GroupMessageList(ctx, &protocoltypes.GroupMessageList_Request{GroupPK: group.PublicKey, UntilNow: true})
 	require.NoError(t, err)
 
 	expectedMsgs := map[string]struct{}{
@@ -359,10 +424,16 @@ func TestScenario_ReplicateMessage(t *testing.T) {
 		"test3": {},
 	}
 
-	for evt := range msgCh {
-		_, ok := expectedMsgs[string(evt.Message)]
+	for {
+		msg, err := msgList.Recv()
+		if err != nil {
+			require.ErrorIs(t, err, io.EOF)
+			break
+		}
+
+		_, ok := expectedMsgs[string(msg.Message)]
 		require.True(t, ok)
-		delete(expectedMsgs, string(evt.Message))
+		delete(expectedMsgs, string(msg.Message))
 	}
 
 	require.Empty(t, expectedMsgs)
@@ -371,17 +442,6 @@ func TestScenario_ReplicateMessage(t *testing.T) {
 // Helpers
 
 func testingScenario(t *testing.T, tcs []testCase, tf testFunc) {
-	var tracerName string
-	pc, _, _, ok := runtime.Caller(1)
-	fun := runtime.FuncForPC(pc)
-	if ok && fun != nil {
-		funcName := strings.Split(fun.Name(), ".")
-		tracerName = funcName[len(funcName)-1]
-	} else {
-		tracerName = "TestingScenario"
-	}
-	tr := tracer.NewTestingProvider(t, tracerName).Tracer("testing")
-
 	if os.Getenv("WITH_GOLEAK") == "1" {
 		defer goleak.VerifyNone(t,
 			goleak.IgnoreTopFunction("github.com/syndtr/goleveldb/leveldb.(*DB).mpoolDrain"),           // inherited from one of the imports (init)
@@ -405,13 +465,13 @@ func testingScenario(t *testing.T, tcs []testCase, tf testFunc) {
 			logger, cleanup := testutil.Logger(t)
 			defer cleanup()
 
-			opts := TestingOpts{
+			opts := bertyprotocol.TestingOpts{
 				Mocknet:     libp2p_mocknet.New(ctx),
 				Logger:      logger,
 				ConnectFunc: tc.ConnectFunc,
 			}
 
-			tps, cleanup := NewTestingProtocolWithMockedPeers(ctx, t, &opts, nil, tc.NumberOfClient)
+			tps, cleanup := bertyprotocol.NewTestingProtocolWithMockedPeers(ctx, t, &opts, nil, tc.NumberOfClient)
 			defer cleanup()
 
 			var cctx context.Context
@@ -421,29 +481,73 @@ func testingScenario(t *testing.T, tcs []testCase, tf testFunc) {
 			} else {
 				cctx, cancel = context.WithCancel(ctx)
 			}
-			spanctx, span := tr.Start(cctx, tc.Name)
 
-			tf(spanctx, t, tps...)
-
-			span.End()
+			tf(cctx, t, tps...)
 			cancel()
 		})
 	}
 }
 
-func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*TestingProtocol) *protocoltypes.Group {
-	logTree(t, "Create and Join MultiMember Group", 0, true)
+func testingScenarioNonMocked(t *testing.T, tcs []testCase, tf testFunc) {
+	if os.Getenv("WITH_GOLEAK") == "1" {
+		defer goleak.VerifyNone(t,
+			goleak.IgnoreTopFunction("github.com/syndtr/goleveldb/leveldb.(*DB).mpoolDrain"),           // inherited from one of the imports (init)
+			goleak.IgnoreTopFunction("github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine"),       // inherited from one of the imports (init)
+			goleak.IgnoreTopFunction("github.com/libp2p/go-libp2p-connmgr.(*BasicConnMgr).background"), // inherited from github.com/ipfs/go-ipfs/core.NewNode
+			goleak.IgnoreTopFunction("github.com/jbenet/goprocess/periodic.callOnTicker.func1"),        // inherited from github.com/ipfs/go-ipfs/core.NewNode
+			goleak.IgnoreTopFunction("github.com/libp2p/go-libp2p-connmgr.(*decayer).process"),         // inherited from github.com/ipfs/go-ipfs/core.NewNode)
+			goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),                    // inherited from github.com/ipfs/go-ipfs/core.NewNode)
+			goleak.IgnoreTopFunction("github.com/desertbit/timer.timerRoutine"),                        // inherited from github.com/ipfs/go-ipfs/core.NewNode)
+			goleak.IgnoreTopFunction("go.opentelemetry.io/otel/instrumentation/grpctrace.wrapClientStream.func1"),
+			goleak.IgnoreTopFunction("go.opentelemetry.io/otel/instrumentation/grpctrace.StreamClientInterceptor.func1.1"),
+		)
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.Name, func(t *testing.T) {
+			testutil.FilterStabilityAndSpeed(t, tc.Stability, tc.Speed)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			logger, cleanup := testutil.Logger(t)
+			defer cleanup()
+
+			opts := bertyprotocol.TestingOpts{
+				Mocknet:     libp2p_mocknet.New(ctx),
+				Logger:      logger,
+				ConnectFunc: tc.ConnectFunc,
+			}
+
+			tps, cleanup := bertyprotocol.NewTestingProtocolWithMockedPeers(ctx, t, &opts, nil, tc.NumberOfClient)
+			defer cleanup()
+
+			var cctx context.Context
+
+			if tc.Timeout > 0 {
+				cctx, cancel = context.WithTimeout(ctx, tc.Timeout)
+			} else {
+				cctx, cancel = context.WithCancel(ctx)
+			}
+
+			tf(cctx, t, tps...)
+			cancel()
+		})
+	}
+}
+
+func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) *protocoltypes.Group {
+	testutil.LogTree(t, "Create and Join MultiMember Group", 0, true)
 	start := time.Now()
 
 	ntps := len(tps)
 
 	// Create group
-	group, _, err := NewGroupMultiMember()
+	group, _, err := bertyprotocol.NewGroupMultiMember()
 	require.NoError(t, err)
 
 	// Get Instance Configurations
 	{
-		logTree(t, "Get Instance Configuration", 1, true)
+		testutil.LogTree(t, "Get Instance Configuration", 1, true)
 		start := time.Now()
 
 		// check if everything is ready
@@ -452,12 +556,12 @@ func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*T
 			require.NoError(t, err)
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
 	// Join Group
 	{
-		logTree(t, "Join Group", 1, true)
+		testutil.LogTree(t, "Join Group", 1, true)
 		start := time.Now()
 
 		for _, pt := range tps {
@@ -470,14 +574,14 @@ func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*T
 			require.NoError(t, err)
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
 	// Get Member/Device PKs
 	memberPKs := make([][]byte, ntps)
 	devicePKs := make([][]byte, ntps)
 	{
-		logTree(t, "Get Member/Device PKs", 1, true)
+		testutil.LogTree(t, "Get Member/Device PKs", 1, true)
 		start := time.Now()
 
 		for i, pt := range tps {
@@ -491,12 +595,12 @@ func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*T
 			devicePKs[i] = res.DevicePK
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
 	// Activate Group
 	{
-		logTree(t, "Activate Group", 1, true)
+		testutil.LogTree(t, "Activate Group", 1, true)
 		start := time.Now()
 
 		for i, pt := range tps {
@@ -507,12 +611,12 @@ func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*T
 			assert.NoError(t, err, fmt.Sprintf("error for client %d", i))
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
 	// Exchange Secrets
 	{
-		logTree(t, "Exchange Secrets", 1, true)
+		testutil.LogTree(t, "Exchange Secrets", 1, true)
 		start := time.Now()
 
 		wg := sync.WaitGroup{}
@@ -586,20 +690,20 @@ func createMultiMemberGroupInstance(ctx context.Context, t *testing.T, tps ...*T
 		require.True(t, ok)
 		secretsReceivedLock.Unlock()
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
-	logTree(t, "duration: %s", 0, false, time.Since(start))
+	testutil.LogTree(t, "duration: %s", 0, false, time.Since(start))
 
 	return group
 }
 
-func createMultiMemberGroup(ctx context.Context, t *testing.T, tps ...*TestingProtocol) (groupID []byte) {
+func createMultiMemberGroup(ctx context.Context, t *testing.T, tps ...*bertyprotocol.TestingProtocol) (groupID []byte) {
 	return createMultiMemberGroupInstance(ctx, t, tps...).PublicKey
 }
 
-func addAsContact(ctx context.Context, t *testing.T, senders, receivers []*TestingProtocol) {
-	logTree(t, "Add Senders/Receivers as Contact", 0, true)
+func addAsContact(ctx context.Context, t *testing.T, senders, receivers []*bertyprotocol.TestingProtocol) {
+	testutil.LogTree(t, "Add Senders/Receivers as Contact", 0, true)
 	start := time.Now()
 	var sendDuration, receiveDuration, acceptDuration, activateDuration time.Duration
 
@@ -641,7 +745,7 @@ func addAsContact(ctx context.Context, t *testing.T, senders, receivers []*Testi
 			})
 
 			// Check if sender and receiver are the same account, should return the right error and skip
-			if bytes.Compare(senderCfg.AccountPK, receiverCfg.AccountPK) == 0 {
+			if bytes.Equal(senderCfg.AccountPK, receiverCfg.AccountPK) {
 				require.Equal(t, errcode.LastCode(err), errcode.ErrContactRequestSameAccount)
 				continue
 			}
@@ -700,7 +804,7 @@ func addAsContact(ctx context.Context, t *testing.T, senders, receivers []*Testi
 
 				require.NoError(t, err)
 
-				if bytes.Compare(senderCfg.AccountPK, req.ContactPK) == 0 {
+				if bytes.Equal(senderCfg.AccountPK, req.ContactPK) {
 					found = true
 					break
 				}
@@ -752,19 +856,19 @@ func addAsContact(ctx context.Context, t *testing.T, senders, receivers []*Testi
 		}
 	}
 
-	logTree(t, "Send Contact Requests", 1, true)
-	logTree(t, "duration: %s", 1, false, sendDuration)
-	logTree(t, "Receive Contact Requests", 1, true)
-	logTree(t, "duration: %s", 1, false, receiveDuration)
-	logTree(t, "Accept Contact Requests", 1, true)
-	logTree(t, "duration: %s", 1, false, acceptDuration)
-	logTree(t, "Activate Contact Groups", 1, true)
-	logTree(t, "duration: %s", 1, false, activateDuration)
+	testutil.LogTree(t, "Send Contact Requests", 1, true)
+	testutil.LogTree(t, "duration: %s", 1, false, sendDuration)
+	testutil.LogTree(t, "Receive Contact Requests", 1, true)
+	testutil.LogTree(t, "duration: %s", 1, false, receiveDuration)
+	testutil.LogTree(t, "Accept Contact Requests", 1, true)
+	testutil.LogTree(t, "duration: %s", 1, false, acceptDuration)
+	testutil.LogTree(t, "Activate Contact Groups", 1, true)
+	testutil.LogTree(t, "duration: %s", 1, false, activateDuration)
 
-	logTree(t, "duration: %s", 0, false, time.Since(start))
+	testutil.LogTree(t, "duration: %s", 0, false, time.Since(start))
 }
 
-func sendMessageToContact(ctx context.Context, t *testing.T, messages []string, tps []*TestingProtocol) {
+func sendMessageToContact(ctx context.Context, t *testing.T, messages []string, tps []*bertyprotocol.TestingProtocol) {
 	for _, sender := range tps {
 		for _, receiver := range tps {
 			// Don't try to send messages to itself using contact group
@@ -780,13 +884,13 @@ func sendMessageToContact(ctx context.Context, t *testing.T, messages []string, 
 			require.NotNil(t, contactGroup)
 
 			// Send messages on contact group
-			sendMessageOnGroup(ctx, t, []*TestingProtocol{sender}, []*TestingProtocol{receiver}, contactGroup.Group.PublicKey, messages)
+			sendMessageOnGroup(ctx, t, []*bertyprotocol.TestingProtocol{sender}, []*bertyprotocol.TestingProtocol{receiver}, contactGroup.Group.PublicKey, messages)
 		}
 	}
 }
 
-func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []*TestingProtocol, groupPK []byte, messages []string) {
-	logTree(t, "Send, Receive and List Messages", 0, true)
+func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []*bertyprotocol.TestingProtocol, groupPK []byte, messages []string) {
+	testutil.LogTree(t, "Send, Receive and List Messages", 0, true)
 	start := time.Now()
 
 	// Setup expectedMessages map
@@ -826,7 +930,7 @@ func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []
 
 	// Senders send all expected messages
 	{
-		logTree(t, "Senders Send Messages", 1, true)
+		testutil.LogTree(t, "Senders Send Messages", 1, true)
 		start := time.Now()
 
 		for _, sender := range senders {
@@ -841,12 +945,12 @@ func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []
 			}
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
 	// Receivers receive all expected messages
 	{
-		logTree(t, "Receivers Receive Messages (subscription)", 1, true)
+		testutil.LogTree(t, "Receivers Receive Messages (subscription)", 1, true)
 		start := time.Now()
 
 		var wg sync.WaitGroup
@@ -854,7 +958,7 @@ func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []
 
 		for _, receiver := range receivers {
 			// Subscribe receivers to wait for incoming messages
-			go func(receiver *TestingProtocol) {
+			go func(receiver *bertyprotocol.TestingProtocol) {
 				subCtx, subCancel := context.WithCancel(ctx)
 				defer subCancel()
 				defer wg.Done()
@@ -920,12 +1024,12 @@ func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []
 			assert.Equal(t, expectedMessagesCount, subReceivedMessagesCount[receiverID])
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
 
 	// Receivers list all expected messages
 	{
-		logTree(t, "Receivers List Messages (store)", 1, true)
+		testutil.LogTree(t, "Receivers List Messages (store)", 1, true)
 		start := time.Now()
 
 		var wg sync.WaitGroup
@@ -933,7 +1037,7 @@ func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []
 
 		for _, receiver := range receivers {
 			// Subscribe receivers to wait for incoming messages
-			go func(receiver *TestingProtocol) {
+			go func(receiver *bertyprotocol.TestingProtocol) {
 				subCtx, subCancel := context.WithCancel(ctx)
 				defer subCancel()
 				defer wg.Done()
@@ -1002,9 +1106,9 @@ func sendMessageOnGroup(ctx context.Context, t *testing.T, senders, receivers []
 			assert.Equal(t, expectedMessagesCount, listReceivedMessagesCount[receiverID])
 		}
 
-		logTree(t, "duration: %s", 1, false, time.Since(start))
+		testutil.LogTree(t, "duration: %s", 1, false, time.Since(start))
 	}
-	logTree(t, "duration: %s", 0, false, time.Since(start))
+	testutil.LogTree(t, "duration: %s", 0, false, time.Since(start))
 }
 
 func isEventAddSecretTargetedToMember(ownRawPK []byte, evt *protocoltypes.GroupMetadataEvent) ([]byte, error) {
@@ -1027,7 +1131,7 @@ func isEventAddSecretTargetedToMember(ownRawPK []byte, evt *protocoltypes.GroupM
 	return sec.DevicePK, nil
 }
 
-func getAccountPubKey(t *testing.T, tp *TestingProtocol) []byte {
+func getAccountPubKey(t *testing.T, tp *bertyprotocol.TestingProtocol) []byte {
 	t.Helper()
 
 	tpSK, err := tp.Opts.DeviceKeystore.AccountPrivKey()
@@ -1038,7 +1142,7 @@ func getAccountPubKey(t *testing.T, tp *TestingProtocol) []byte {
 	return tpPK
 }
 
-func getAccountB64PubKey(t *testing.T, tp *TestingProtocol) string {
+func getAccountB64PubKey(t *testing.T, tp *bertyprotocol.TestingProtocol) string {
 	t.Helper()
 
 	tpPK := getAccountPubKey(t, tp)

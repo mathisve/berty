@@ -1,8 +1,8 @@
-import pb from '@berty-tech/api/root.pb'
+import pb from '@berty/api/root.pb'
 
-const uncap = (str) => str.slice(0, 1).toLowerCase() + str.slice(1)
+const uncap = str => str.slice(0, 1).toLowerCase() + str.slice(1)
 
-console.log("import beapi from '@berty-tech/api'")
+console.log("import beapi from '@berty/api'")
 
 console.log("\nimport { UnaryType, RequestStreamType, ResponseStreamType } from './types'")
 
@@ -10,6 +10,7 @@ const services = [
 	'berty.protocol.v1.ProtocolService',
 	'berty.account.v1.AccountService',
 	'berty.messenger.v1.MessengerService',
+	'berty.bridge.v1.BridgeService',
 ]
 
 console.log('\nexport type ServiceClientType<S> =')

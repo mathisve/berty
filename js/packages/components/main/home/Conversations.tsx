@@ -1,43 +1,45 @@
 import React from 'react'
-import { StyleProp, TouchableHighlight, View, ViewProps } from 'react-native'
-import { SafeAreaConsumer } from 'react-native-safe-area-context'
-import { CommonActions } from '@react-navigation/native'
-import { Icon, Text } from '@ui-kitten/components'
-import { requestNotifications, RESULTS } from 'react-native-permissions'
-
-import { useStyles } from '@berty-tech/styles'
-import beapi from '@berty-tech/api'
-import { PersistentOptionsKeys, useMsgrContext } from '@berty-tech/store/context'
-import { useLastConvInteraction } from '@berty-tech/store/hooks'
-import { Routes, useNavigation } from '@berty-tech/navigation'
-
-import { ConversationAvatar, HardcodedAvatar } from '../../avatars'
-import { pbDateToNum, timeFormat } from '../../helpers'
-import { UnreadCount } from './UnreadCount'
+import { ActivityIndicator, TouchableHighlight, View, ViewProps, ViewStyle } from 'react-native'
+import { Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
-import { requestBluetoothAndHandleAlert } from '../bluetooth'
 
-type ConversationsProps = ViewProps & {
-	items: Array<any>
-	suggestions: Array<any>
-	configurations: Array<any>
-	addBot: any
-}
+import { defaultStylesDeclaration, useStyles } from '@berty/styles'
+import beapi from '@berty/api'
+import { pbDateToNum, useThemeColor, ParsedInteraction } from '@berty/store'
+import { useNavigation } from '@berty/navigation'
+import { useAppSelector, useOneToOneContact, useLastConvInteraction } from '@berty/hooks'
+import { selectChatInputText } from '@berty/redux/reducers/chatInputs.reducer'
 
-type ConversationsItemProps = any
+import { ConversationAvatar, HardcodedAvatar, HardcodedAvatarKey } from '../../avatars'
+import { timeFormat } from '../../helpers'
+import { UnreadCount } from './UnreadCount'
+import { selectChatInputIsSending } from '@berty/redux/reducers/chatInputsVolatile.reducer'
+import { Suggestion, Configuration } from '@berty/redux/reducers/persistentOptions.reducer'
+import { UnifiedText } from '../../shared-components/UnifiedText'
+
+type AddBotCallback = React.Dispatch<
+	React.SetStateAction<{
+		link: string
+		displayName: string
+		isVisible: boolean
+	}>
+>
 
 // Functions
 
-const MessageStatus: React.FC<{ interaction: any; isAccepted: boolean }> = ({
-	interaction,
-	isAccepted,
-}) => {
-	const [{ color }] = useStyles()
+const MessageStatus: React.FC<{
+	interaction: ParsedInteraction
+	isAccepted: boolean
+	sending?: boolean
+}> = React.memo(({ interaction, isAccepted, sending }) => {
+	const colors = useThemeColor()
 	if (interaction?.type !== beapi.messenger.AppMessage.Type.TypeUserMessage && isAccepted) {
 		return null
 	}
 
-	return (
+	return sending ? (
+		<ActivityIndicator />
+	) : (
 		<Icon
 			name={
 				(interaction && !interaction.acknowledged) || !isAccepted
@@ -46,45 +48,55 @@ const MessageStatus: React.FC<{ interaction: any; isAccepted: boolean }> = ({
 			}
 			width={14}
 			height={14}
-			fill={color.blue}
+			fill={colors['background-header']}
 		/>
 	)
-}
+})
 
-const interactionsFilter = (inte: any) =>
-	inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage
+const interactionsFilter = (inte: ParsedInteraction) =>
+	inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage ||
+	inte.type === beapi.messenger.AppMessage.Type.TypeGroupInvitation
 
-const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
+const ConversationsItem: React.FC<
+	beapi.messenger.IConversation & { fake?: boolean; isLast: boolean }
+> = React.memo(props => {
 	const {
-		publicKey = '',
-		displayName = '',
 		fake = false,
 		type = beapi.messenger.Conversation.Type.ContactType,
 		unreadCount,
 		createdDate,
 		lastUpdate,
+		isLast,
 	} = props
 
-	const ctx = useMsgrContext()
+	const publicKey = props.publicKey || ''
+	const displayName = props.displayName || ''
+
+	const { t } = useTranslation()
 
 	const lastInte = useLastConvInteraction(publicKey, interactionsFilter)
-
 	const displayDate = lastUpdate || createdDate ? pbDateToNum(lastUpdate || createdDate) : null
 
-	const contact =
-		Object.values(ctx.contacts).find((c: any) => c.conversationPublicKey === publicKey) || null
+	const contact = useOneToOneContact(publicKey)
 	const isAccepted = contact && contact.state === beapi.messenger.Contact.State.Accepted
 	const isIncoming = contact && contact.state === beapi.messenger.Contact.State.IncomingRequest
 
-	const [{ color, row, border, flex, padding, text, opacity, margin }, { scaleSize }] = useStyles()
-	const { dispatch } = useNavigation()
+	const [{ row, border, flex, padding, text, opacity, margin }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+	const { navigate } = useNavigation()
+	const chatInputText = useAppSelector(state => selectChatInputText(state, publicKey))
+	const chatInputIsSending = useAppSelector(state => selectChatInputIsSending(state, publicKey))
 
 	let description
 	if (lastInte?.type === beapi.messenger.AppMessage.Type.TypeUserMessage) {
-		description = (lastInte.payload as any)?.body
+		description = lastInte.payload?.body
+	} else if (lastInte?.type === beapi.messenger.AppMessage.Type.TypeGroupInvitation) {
+		description = lastInte.isMine
+			? 'You sent group invitation!'
+			: 'You received new group invitation!'
 	} else {
 		if (contact?.state === beapi.messenger.Contact.State.OutgoingRequestSent) {
-			description = 'Request is sent. Pending...'
+			description = t('main.home.conversations.request-sent')
 		} else {
 			description = ''
 		}
@@ -97,7 +109,7 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 			? displayName
 			: contact?.displayName || ''
 
-	if (lastInte?.medias?.length) {
+	if (!chatInputText && lastInte?.medias?.length) {
 		if (lastInte.medias[0].mimeType?.startsWith('image')) {
 			messageType = 'picture'
 			description = `${lastInte.isMine ? 'You' : userDisplayName} sent ${
@@ -111,9 +123,17 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 		}
 	}
 
+	if (chatInputIsSending) {
+		description = t('chat.sending')
+	} else if (chatInputText) {
+		description = t('main.home.conversations.draft', {
+			message: chatInputText,
+		})
+	}
+
 	return !isIncoming ? (
 		<TouchableHighlight
-			underlayColor={color.light.grey}
+			underlayColor={`${colors['secondary-text']}80`}
 			style={[
 				padding.horizontal.medium,
 				!isAccepted && type !== beapi.messenger.Conversation.Type.MultiMemberType && opacity(0.6),
@@ -121,29 +141,25 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 			onPress={
 				type === beapi.messenger.Conversation.Type.MultiMemberType
 					? () =>
-							dispatch(
-								CommonActions.navigate({
-									name: Routes.Chat.Group,
-									params: {
-										convId: publicKey,
-									},
-								}),
-							)
+							navigate({
+								name: 'Chat.Group',
+								params: {
+									convId: publicKey,
+								},
+							})
 					: () =>
-							dispatch(
-								CommonActions.navigate({
-									name: Routes.Chat.OneToOne,
-									params: {
-										convId: publicKey,
-									},
-								}),
-							)
+							navigate({
+								name: 'Chat.OneToOne',
+								params: {
+									convId: publicKey,
+								},
+							})
 			}
 		>
 			<View
 				style={[
 					row.center,
-					border.bottom.medium,
+					!isLast && border.bottom.medium,
 					border.color.light.grey,
 					padding.vertical.scale(7),
 				]}
@@ -174,38 +190,38 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 					]}
 				>
 					{/* Conversation title, unread count, and time */}
-					<View style={[flex.direction.row, flex.justify.flexStart]}>
+					<View style={[flex.direction.row, flex.justify.start]}>
 						{/* Title */}
 						<View
 							style={{
 								flexShrink: 1,
 							}}
 						>
-							<Text numberOfLines={1} style={[text.size.medium, text.color.black]}>
+							<UnifiedText numberOfLines={1}>
 								{fake ? `FAKE - ${userDisplayName}` : userDisplayName}
-							</Text>
+							</UnifiedText>
 						</View>
 						{/* Timestamp and unread count */}
 						<View
 							style={[
 								flex.direction.row,
 								flex.align.center,
-								flex.justify.flexEnd,
+								flex.justify.end,
 								{ marginLeft: 'auto' },
 							]}
 						>
 							<>
-								<UnreadCount value={unreadCount} isConvBadge />
+								<UnreadCount value={unreadCount || 0} isConvBadge />
 								{displayDate && (
-									<Text
+									<UnifiedText
 										style={[
 											padding.left.small,
 											text.size.small,
-											unreadCount ? [text.bold.medium, text.color.black] : text.color.grey,
+											unreadCount ? [text.bold] : { color: colors['secondary-text'] },
 										]}
 									>
 										{timeFormat.fmtTimestamp1(displayDate)}
-									</Text>
+									</UnifiedText>
 								)}
 							</>
 						</View>
@@ -215,29 +231,32 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 							flex.direction.row,
 							flex.align.center,
 							{
-								height: text.size.small.fontSize * 1.8, // Keep row height even if no description/message
+								height: defaultStylesDeclaration.text.sizes.small * 1.8, // Keep row height even if no description/message
 							},
 						]}
 					>
 						{!!messageType && (
 							<Icon
 								name={messageType === 'audio' ? 'headphones' : 'image'}
-								fill={color.black}
+								fill={colors['main-text']}
 								height={20 * scaleSize}
 								width={20 * scaleSize}
 								style={[margin.right.tiny]}
 							/>
 						)}
-						<Text
+						<UnifiedText
 							numberOfLines={1}
 							style={[
 								{ flexGrow: 2, flexShrink: 1 },
+								(chatInputText ||
+									lastInte?.type === beapi.messenger.AppMessage.Type.TypeGroupInvitation) &&
+									text.italic,
 								text.size.small,
-								unreadCount ? [text.bold.medium, text.color.black] : text.color.grey,
+								unreadCount ? [text.bold] : { color: colors['secondary-text'] },
 							]}
 						>
-							{description}
-						</Text>
+							{description || ''}
+						</UnifiedText>
 
 						{/* Message status */}
 						<View
@@ -257,6 +276,7 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 									isAccepted={
 										isAccepted || type === beapi.messenger.Conversation.Type.MultiMemberType
 									}
+									sending={chatInputIsSending}
 								/>
 							)}
 						</View>
@@ -265,32 +285,31 @@ const ConversationsItem: React.FC<ConversationsItemProps> = (props) => {
 			</View>
 		</TouchableHighlight>
 	) : null
-}
+})
 
 const SuggestionsItem: React.FC<{
 	displayName: string
 	desc: string
 	link: string
-	addBot: any
+	addBot: AddBotCallback
 	icon: string
-	style?: StyleProp<any>
-}> = ({ displayName, desc, link, addBot, icon, style }) => {
-	const [{ color, row, border, flex, padding, text, margin }, { scaleSize }] = useStyles()
+	isLast?: boolean
+	style?: ViewStyle
+}> = React.memo(({ displayName, desc, link, addBot, icon, style, isLast = false }) => {
+	const [{ row, border, flex, padding, text, margin }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+
 	return (
 		<>
 			<TouchableHighlight
-				underlayColor={color.light.grey}
-				style={[
-					padding.horizontal.medium,
-					style,
-					// !isAccepted && type !== beapi.messenger.Conversation.Type.MultiMemberType && opacity(0.6),
-				]}
+				underlayColor={`${colors['secondary-text']}80`}
+				style={[padding.horizontal.medium, style]}
 				onPress={() => addBot({ displayName, link, isVisible: true })}
 			>
 				<View
 					style={[
 						row.center,
-						border.bottom.medium,
+						!isLast && border.bottom.medium,
 						border.color.light.grey,
 						padding.vertical.scale(7),
 					]}
@@ -308,7 +327,7 @@ const SuggestionsItem: React.FC<{
 							},
 						]}
 					>
-						<HardcodedAvatar size={40 * scaleSize} name={icon} />
+						<HardcodedAvatar size={40 * scaleSize} name={icon as HardcodedAvatarKey} />
 					</View>
 					<View
 						style={[
@@ -321,16 +340,14 @@ const SuggestionsItem: React.FC<{
 						]}
 					>
 						{/* Conversation title, unread count, and time */}
-						<View style={[flex.direction.row, flex.justify.flexStart]}>
+						<View style={[flex.direction.row, flex.justify.start]}>
 							{/* Title */}
 							<View
 								style={{
 									flexShrink: 1,
 								}}
 							>
-								<Text numberOfLines={1} style={[text.size.medium, text.color.black]}>
-									{displayName}
-								</Text>
+								<UnifiedText numberOfLines={1}>{displayName}</UnifiedText>
 							</View>
 						</View>
 						<View
@@ -338,16 +355,20 @@ const SuggestionsItem: React.FC<{
 								flex.direction.row,
 								flex.align.center,
 								{
-									height: text.size.small.fontSize * 1.8, // Keep row height even if no description/message
+									height: defaultStylesDeclaration.text.sizes.small * 1.8, // Keep row height even if no description/message
 								},
 							]}
 						>
-							<Text
+							<UnifiedText
 								numberOfLines={1}
-								style={[{ flexGrow: 2, flexShrink: 1 }, text.size.small, text.color.grey]}
+								style={[
+									{ flexGrow: 2, flexShrink: 1 },
+									text.size.small,
+									{ color: colors['secondary-text'] },
+								]}
 							>
 								{desc}
-							</Text>
+							</UnifiedText>
 							{/* Message status */}
 							<View
 								style={[
@@ -360,7 +381,12 @@ const SuggestionsItem: React.FC<{
 									},
 								]}
 							>
-								<Icon name='info-outline' width={15} height={15} fill={color.dark.blue} />
+								<Icon
+									name='info-outline'
+									width={15}
+									height={15}
+									fill={colors['background-header']}
+								/>
 							</View>
 						</View>
 					</View>
@@ -368,79 +394,47 @@ const SuggestionsItem: React.FC<{
 			</TouchableHighlight>
 		</>
 	)
-}
+})
 
-export const Conversations: React.FC<ConversationsProps> = ({
-	items,
-	suggestions,
-	configurations,
-	style,
-	onLayout,
-	addBot,
-}) => {
-	const [{ background }] = useStyles()
+export const Conversations: React.FC<
+	ViewProps & {
+		items: beapi.messenger.IConversation[]
+		suggestions: Suggestion[]
+		configurations: Configuration[]
+		addBot: AddBotCallback
+	}
+> = React.memo(({ items, suggestions, configurations, addBot }) => {
+	const [{ padding }] = useStyles()
 	const { t } = useTranslation()
-	const { navigate } = useNavigation()
-	const { persistentOptions, setPersistentOption } = useMsgrContext()
+	const colors = useThemeColor()
 
 	return items.length || suggestions.length || configurations.length ? (
-		<SafeAreaConsumer>
-			{(insets) => (
-				<View
-					onLayout={onLayout}
-					style={[
-						style,
-						background.white,
-						{ paddingBottom: 100 - (insets?.bottom || 0) + (insets?.bottom || 0) },
-					]}
-				>
-					{configurations.map((config) => (
-						<SuggestionsItem
-							key={config.key}
-							displayName={t(config.displayName)}
-							desc={t(config.desc)}
-							link=''
-							icon={config.icon}
-							addBot={async () => {
-								if (config.key === 'network') {
-									await requestBluetoothAndHandleAlert()
-									if (persistentOptions.preset.value === 'full-anonymity') {
-										navigate.main.networkOptions()
-									} else {
-										navigate.onboarding.servicesAuth()
-									}
-								} else {
-									const { status } = await requestNotifications(['alert', 'badge'])
-
-									await setPersistentOption({
-										type: PersistentOptionsKeys.Configurations,
-										payload: {
-											...persistentOptions.configurations,
-											notification: {
-												...persistentOptions.configurations.notification,
-												state: status === RESULTS.GRANTED ? 'added' : 'skipped',
-											},
-										},
-									})
-								}
-							}}
-							style={{ backgroundColor: config.color }}
-						/>
-					))}
-
-					{items.map((i) => (
-						<ConversationsItem key={i.publicKey} {...i} />
-					))}
-					{suggestions.map((i: any, key: any) => (
-						<SuggestionsItem
-							key={key}
-							{...i}
-							desc={`${t('main.suggestion-display-name-initial')} ${i.displayName}`}
-							addBot={addBot}
-						/>
-					))}
-				</View>
-			)}
-		</SafeAreaConsumer>
+		<View
+			style={[
+				padding.bottom.medium,
+				{
+					flex: 1,
+					backgroundColor: colors['main-background'],
+				},
+			]}
+		>
+			{/* TODO configurations conv ? */}
+			{items.map((conv, index) => (
+				<ConversationsItem
+					key={conv.publicKey}
+					{...conv}
+					isLast={!suggestions.length && index === items.length - 1}
+				/>
+			))}
+			{suggestions.map((suggestion, index) => (
+				<SuggestionsItem
+					key={`__suggestion_${index}`}
+					isLast={index === suggestions.length - 1}
+					{...suggestion}
+					desc={`${t('main.suggestion-display-name-initial')} ${suggestion.displayName}`}
+					addBot={addBot}
+				/>
+			))}
+		</View>
 	) : null
-}
+})

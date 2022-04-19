@@ -574,39 +574,6 @@
         ]
       }
     },
-    "/berty.messenger.v1/MessengerService/GetUsername": {
-      "post": {
-        "summary": "GetUsername returns the name of the device/user using Android/iOS/universal API",
-        "operationId": "MessengerService_GetUsername",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetUsernameReply"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/runtimeError"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1GetUsernameRequest"
-            }
-          }
-        ],
-        "tags": [
-          "MessengerService"
-        ]
-      }
-    },
     "/berty.messenger.v1/MessengerService/InstanceExportData": {
       "post": {
         "summary": "InstanceExportData exports instance data",
@@ -706,6 +673,81 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1InteractRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
+    "/berty.messenger.v1/MessengerService/InteractionReactionsForEmoji": {
+      "post": {
+        "summary": "InteractionReactionsForEmoji returns a list of reactions on an interaction for a specific emoji",
+        "operationId": "MessengerService_InteractionReactionsForEmoji",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InteractionReactionsForEmojiReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InteractionReactionsForEmojiRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
+    "/berty.messenger.v1/MessengerService/ListMemberDevices": {
+      "post": {
+        "summary": "ListMemberDevices Lists devices for a member",
+        "operationId": "MessengerService_ListMemberDevices",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1ListMemberDevicesReply"
+                },
+                "error": {
+                  "$ref": "#/definitions/runtimeStreamError"
+                }
+              },
+              "title": "Stream result of v1ListMemberDevicesReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ListMemberDevicesRequest"
             }
           }
         ],
@@ -889,6 +931,147 @@
         ]
       }
     },
+    "/berty.messenger.v1/MessengerService/PushReceive": {
+      "post": {
+        "summary": "PushReceive handles a push payload, decrypts it if possible, adds it to the local store",
+        "operationId": "MessengerService_PushReceive",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/bertymessengerv1PushReceiveReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/bertymessengerv1PushReceiveRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
+    "/berty.messenger.v1/MessengerService/PushSetAutoShare": {
+      "post": {
+        "summary": "PushSetAutoShare Sets whether new groups should receive our push token automatically or not",
+        "operationId": "MessengerService_PushSetAutoShare",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PushSetAutoShareReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PushSetAutoShareRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
+    "/berty.messenger.v1/MessengerService/PushShareTokenForConversation": {
+      "post": {
+        "summary": "PushShareTokenForConversation Share a push token for a conversation",
+        "operationId": "MessengerService_PushShareTokenForConversation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PushShareTokenForConversationReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PushShareTokenForConversationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
+    "/berty.messenger.v1/MessengerService/PushTokenSharedForConversation": {
+      "post": {
+        "summary": "PushTokenSharedForConversation",
+        "operationId": "MessengerService_PushTokenSharedForConversation",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1PushTokenSharedForConversationReply"
+                },
+                "error": {
+                  "$ref": "#/definitions/runtimeStreamError"
+                }
+              },
+              "title": "Stream result of v1PushTokenSharedForConversationReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PushTokenSharedForConversationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
     "/berty.messenger.v1/MessengerService/ReplicationServiceRegisterGroup": {
       "post": {
         "summary": "ReplicationServiceRegisterGroup Asks a replication service to distribute a group contents",
@@ -947,39 +1130,6 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1ReplicationSetAutoEnableRequest"
-            }
-          }
-        ],
-        "tags": [
-          "MessengerService"
-        ]
-      }
-    },
-    "/berty.messenger.v1/MessengerService/SendAck": {
-      "post": {
-        "summary": "SendAck sends an acknowledge payload for given message id.",
-        "operationId": "MessengerService_SendAck",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1SendAckReply"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/runtimeError"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1SendAckRequest"
             }
           }
         ],
@@ -1161,6 +1311,81 @@
           "MessengerService"
         ]
       }
+    },
+    "/berty.messenger.v1/MessengerService/TyberHostAttach": {
+      "post": {
+        "summary": "TyberHostAttach",
+        "operationId": "MessengerService_TyberHostAttach",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TyberHostAttachReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TyberHostAttachRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
+    },
+    "/berty.messenger.v1/MessengerService/TyberHostSearch": {
+      "post": {
+        "summary": "TyberHostSearch",
+        "operationId": "MessengerService_TyberHostSearch",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1TyberHostSearchReply"
+                },
+                "error": {
+                  "$ref": "#/definitions/runtimeStreamError"
+                }
+              },
+              "title": "Stream result of v1TyberHostSearchReply"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TyberHostSearchRequest"
+            }
+          }
+        ],
+        "tags": [
+          "MessengerService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -1172,6 +1397,20 @@
           "items": {
             "$ref": "#/definitions/v1ReplyOption"
           }
+        }
+      }
+    },
+    "BertyLinkBertyMessageRef": {
+      "type": "object",
+      "properties": {
+        "account_id": {
+          "type": "string"
+        },
+        "group_pk": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
         }
       }
     },
@@ -1222,6 +1461,10 @@
         "group_sign_pub": {
           "type": "string",
           "format": "byte"
+        },
+        "group_link_key_sig": {
+          "type": "string",
+          "format": "byte"
         }
       },
       "description": "Encrypted is a clear structure containing clear and encrypted fields.\n\nWe prefer to use a clear struct with encrypted fields instead of a simple\nencrypted struct, to improves chances of having a valid structure even\nwith an invalid passphase. This will force an attacker to have more resources\nto test more false-positive guesses."
@@ -1232,7 +1475,8 @@
         "UnknownKind",
         "ContactInviteV1Kind",
         "GroupV1Kind",
-        "EncryptedV1Kind"
+        "EncryptedV1Kind",
+        "MessageV1Kind"
       ],
       "default": "UnknownKind"
     },
@@ -1308,6 +1552,18 @@
           "format": "int64"
         },
         "reactions": {
+          "type": "string",
+          "format": "int64"
+        },
+        "metadata_events": {
+          "type": "string",
+          "format": "int64"
+        },
+        "medias": {
+          "type": "string",
+          "format": "int64"
+        },
+        "shared_push_tokens": {
           "type": "string",
           "format": "int64"
         }
@@ -1443,9 +1699,6 @@
         "display_name": {
           "type": "string"
         },
-        "avatar_cid": {
-          "type": "string"
-        },
         "link": {
           "type": "string"
         },
@@ -1457,6 +1710,20 @@
         },
         "replicate_new_groups_automatically": {
           "type": "boolean"
+        },
+        "avatar_cid": {
+          "type": "string"
+        },
+        "auto_share_push_token_flag": {
+          "type": "boolean"
+        },
+        "device_push_token": {
+          "type": "string",
+          "format": "byte"
+        },
+        "device_push_server": {
+          "type": "string",
+          "format": "byte"
         }
       }
     },
@@ -1471,6 +1738,23 @@
     },
     "bertymessengerv1InstanceExportDataRequest": {
       "type": "object"
+    },
+    "bertymessengerv1PushReceiveReply": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/v1PushReceivedData"
+        }
+      }
+    },
+    "bertymessengerv1PushReceiveRequest": {
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
     },
     "bertymessengerv1ReplicationServiceRegisterGroupReply": {
       "type": "object"
@@ -1520,6 +1804,25 @@
     },
     "bertymessengerv1SystemInfoRequest": {
       "type": "object"
+    },
+    "bertyprotocolv1PushReceiveReply": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "$ref": "#/definitions/v1OutOfStoreMessage"
+        },
+        "cleartext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "group_public_key": {
+          "type": "string",
+          "format": "byte"
+        },
+        "already_received": {
+          "type": "boolean"
+        }
+      }
     },
     "bertyprotocolv1ServiceToken": {
       "type": "object",
@@ -1719,6 +2022,9 @@
         "berty_group": {
           "$ref": "#/definitions/v1BertyGroup"
         },
+        "berty_message_ref": {
+          "$ref": "#/definitions/BertyLinkBertyMessageRef"
+        },
         "encrypted": {
           "$ref": "#/definitions/BertyLinkEncrypted"
         }
@@ -1819,9 +2125,6 @@
         "display_name": {
           "type": "string"
         },
-        "avatar_cid": {
-          "type": "string"
-        },
         "link": {
           "type": "string"
         },
@@ -1871,10 +2174,19 @@
             "$ref": "#/definitions/v1ConversationReplicationInfo"
           }
         },
+        "avatar_cid": {
+          "type": "string"
+        },
         "info_date": {
           "type": "string",
           "format": "int64",
-          "title": "info_date is used when SetGroupInfo was called"
+          "title": "info_date is used when SetGroupInfo is called"
+        },
+        "shared_push_token_identifier": {
+          "type": "string"
+        },
+        "local_member_public_key": {
+          "type": "string"
         }
       }
     },
@@ -2096,17 +2408,6 @@
         }
       }
     },
-    "v1GetUsernameReply": {
-      "type": "object",
-      "properties": {
-        "username": {
-          "type": "string"
-        }
-      }
-    },
-    "v1GetUsernameRequest": {
-      "type": "object"
-    },
     "v1Group": {
       "type": "object",
       "properties": {
@@ -2133,6 +2434,16 @@
           "type": "string",
           "format": "byte",
           "title": "sign_pub is the signature public key used to verify entries, not required when secret and secret_sig are provided"
+        },
+        "link_key": {
+          "type": "string",
+          "format": "byte",
+          "title": "link_key is the secret key used to exchange group updates and links to attachments, useful for replication services"
+        },
+        "link_key_sig": {
+          "type": "string",
+          "format": "byte",
+          "title": "link_key_sig is the signature of the link_key using the group private key"
         }
       },
       "title": "Group define a group and is enough to invite someone to it"
@@ -2208,6 +2519,9 @@
         },
         "target_cid": {
           "type": "string"
+        },
+        "metadata": {
+          "type": "boolean"
         }
       }
     },
@@ -2262,8 +2576,51 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/InteractionReactionView"
-          },
-          "title": "specific to client model"
+          }
+        },
+        "out_of_store_message": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1InteractionReactionsForEmojiReply": {
+      "type": "object",
+      "properties": {
+        "reactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1Reaction"
+          }
+        }
+      }
+    },
+    "v1InteractionReactionsForEmojiRequest": {
+      "type": "object",
+      "properties": {
+        "interaction_cid": {
+          "type": "string"
+        },
+        "emoji": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListMemberDevicesReply": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "$ref": "#/definitions/v1Device"
+        }
+      }
+    },
+    "v1ListMemberDevicesRequest": {
+      "type": "object",
+      "properties": {
+        "conversation_pk": {
+          "type": "string"
+        },
+        "member_pk": {
+          "type": "string"
         }
       }
     },
@@ -2458,6 +2815,39 @@
         }
       }
     },
+    "v1OutOfStoreMessage": {
+      "type": "object",
+      "properties": {
+        "cid": {
+          "type": "string",
+          "format": "byte"
+        },
+        "device_pk": {
+          "type": "string",
+          "format": "byte"
+        },
+        "counter": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "sig": {
+          "type": "string",
+          "format": "byte"
+        },
+        "flags": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "encrypted_payload": {
+          "type": "string",
+          "format": "byte"
+        },
+        "nonce": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
     "v1PaginatedInteractionsOptions": {
       "type": "object",
       "properties": {
@@ -2509,6 +2899,82 @@
         }
       }
     },
+    "v1PushReceivedData": {
+      "type": "object",
+      "properties": {
+        "protocol_data": {
+          "$ref": "#/definitions/bertyprotocolv1PushReceiveReply"
+        },
+        "interaction": {
+          "$ref": "#/definitions/v1Interaction"
+        },
+        "already_received": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1PushSetAutoShareReply": {
+      "type": "object"
+    },
+    "v1PushSetAutoShareRequest": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1PushShareTokenForConversationReply": {
+      "type": "object"
+    },
+    "v1PushShareTokenForConversationRequest": {
+      "type": "object",
+      "properties": {
+        "conversation_pk": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PushTokenSharedForConversationReply": {
+      "type": "object",
+      "properties": {
+        "push_token": {
+          "$ref": "#/definitions/v1SharedPushToken"
+        }
+      }
+    },
+    "v1PushTokenSharedForConversationRequest": {
+      "type": "object",
+      "properties": {
+        "conversation_pk": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Reaction": {
+      "type": "object",
+      "properties": {
+        "target_cid": {
+          "type": "string"
+        },
+        "member_public_key": {
+          "type": "string"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "is_mine": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "boolean"
+        },
+        "state_date": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
     "v1ReplicationSetAutoEnableReply": {
       "type": "object"
     },
@@ -2528,22 +2994,6 @@
         },
         "payload": {
           "type": "string"
-        }
-      }
-    },
-    "v1SendAckReply": {
-      "type": "object"
-    },
-    "v1SendAckRequest": {
-      "type": "object",
-      "properties": {
-        "group_pk": {
-          "type": "string",
-          "format": "byte"
-        },
-        "message_id": {
-          "type": "string",
-          "format": "byte"
         }
       }
     },
@@ -2632,6 +3082,23 @@
         }
       }
     },
+    "v1SharedPushToken": {
+      "type": "object",
+      "properties": {
+        "device_public_key": {
+          "type": "string"
+        },
+        "member_public_key": {
+          "type": "string"
+        },
+        "conversation_public_key": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
     "v1StreamEvent": {
       "type": "object",
       "properties": {
@@ -2666,6 +3133,48 @@
         "TypeConversationPartialLoad"
       ],
       "default": "Undefined"
+    },
+    "v1TyberHostAttachReply": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TyberHostAttachRequest": {
+      "type": "object",
+      "properties": {
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1TyberHostSearchReply": {
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string"
+        },
+        "ipv4": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ipv6": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1TyberHostSearchRequest": {
+      "type": "object"
     }
   }
 }

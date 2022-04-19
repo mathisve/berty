@@ -1,31 +1,26 @@
 import React from 'react'
-import { Image, View, ViewStyle, Text, TouchableOpacity } from 'react-native'
+import { Image, View, ViewStyle, TouchableOpacity } from 'react-native'
 import palette from 'google-palette'
 import { SHA3 } from 'sha3'
-import { Buffer } from 'buffer'
-import { withBadge } from 'react-native-elements'
 
-import { useStyles } from '@berty-tech/styles'
-import {
-	useAccount,
-	useContact,
-	useMember,
-	useConversation,
-	Maybe,
-	useMsgrContext,
-} from '@berty-tech/store/hooks'
-import { useNavigation } from '@berty-tech/navigation'
-import beapi from '@berty-tech/api'
-import PinkBotAvatar from '@berty-tech/assets/berty_bot_pink_bg.png'
-import GreenDevAvatar from '@berty-tech/assets/berty_dev_green_bg.png'
-import OrangeBotAvatar from '@berty-tech/assets/berty_bot_orange_bg.png'
-import BlueDevAvatar from '@berty-tech/assets/berty_dev_blue_bg.png'
+import { useStyles } from '@berty/styles'
+import { Maybe, useThemeColor } from '@berty/store'
+import { navigate } from '@berty/navigation'
+import beapi from '@berty/api'
+import { useAccount, useContact, useConversation, useMember } from '@berty/hooks'
+import PinkBotAvatar from '@berty/assets/images/berty_bot_pink_bg.png'
+import GreenDevAvatar from '@berty/assets/images/berty_dev_green_bg.png'
+import OrangeBotAvatar from '@berty/assets/images/berty_bot_orange_bg.png'
+import BlueDevAvatar from '@berty/assets/images/berty_dev_blue_bg.png'
+import { selectPersistentOptions } from '@berty/redux/reducers/persistentOptions.reducer'
 
 import AttachmentImage from './AttachmentImage'
-import GroupAvatar from './main/Avatar_Group_Copy_19.png'
-import Logo from './main/1_berty_picto.svg'
+import GroupAvatar from '@berty/assets/images/Avatar_Group_Copy_19.png'
+import Logo from '@berty/assets/logo/1_berty_picto.svg'
+import { useSelector } from 'react-redux'
+import { UnifiedText } from './shared-components/UnifiedText'
 
-export type AvatarStyle = Omit<
+type AvatarStyle = Omit<
 	ViewStyle,
 	'borderRadius' | 'width' | 'height' | 'alignItems' | 'justifyContent'
 >
@@ -40,9 +35,11 @@ export const GenericAvatar: React.FC<{
 	isEditable?: boolean
 	nameSeed: Maybe<string>
 	pressable?: boolean
-}> = ({ cid, size, colorSeed, style, isEditable = false, nameSeed, pressable }) => {
-	const [{ border, background, color }] = useStyles()
-	const padding = Math.round(size / 14)
+}> = React.memo(({ cid, size, colorSeed, style, isEditable = false, nameSeed, pressable }) => {
+	const [{ border }] = useStyles()
+	const colors = useThemeColor()
+
+	const padding = Math.round(size / 28)
 	let innerSize = Math.round(size - 2 * padding)
 	let content: JSX.Element
 	if (cid) {
@@ -50,27 +47,27 @@ export const GenericAvatar: React.FC<{
 			innerSize--
 		}
 		content = (
-			<>
+			<View>
 				<AttachmentImage
 					cid={cid}
 					style={{ width: innerSize, height: innerSize, borderRadius: innerSize / 2 }}
 					pressable={pressable}
 				/>
-				{isEditable ? (
+				{isEditable && (
 					<View
 						style={[
 							{
 								width: innerSize,
 								height: innerSize,
 								position: 'absolute',
-								backgroundColor: color.light.blue,
+								backgroundColor: colors['positive-asset'],
 								opacity: 0.6,
 							},
 							border.radius.scale(innerSize / 2),
 						]}
 					/>
-				) : null}
-			</>
+				)}
+			</View>
 		)
 	} else {
 		let iconSize = Math.round(innerSize - innerSize / 10) // adjust for jdenticon bug
@@ -78,31 +75,29 @@ export const GenericAvatar: React.FC<{
 			iconSize--
 		}
 		content = (
-			<>
+			<View style={{ justifyContent: 'center', alignItems: 'center' }}>
 				<NameAvatar size={size} style={style} colorSeed={colorSeed} nameSeed={nameSeed} />
-				{isEditable ? (
+				{isEditable && (
 					<View
 						style={[
 							{
 								width: innerSize,
 								height: innerSize,
 								position: 'absolute',
-								backgroundColor: color.light.blue,
+								backgroundColor: colors['positive-asset'],
 								opacity: 0.6,
 							},
 							border.radius.scale(innerSize / 2),
 						]}
 					/>
-				) : null}
-			</>
+				)}
+			</View>
 		)
 	}
 	return (
-		<>
+		<View style={{ zIndex: -1 }}>
 			<View
 				style={[
-					background.white,
-					border.shadow.medium,
 					style,
 					{
 						borderRadius: size / 2,
@@ -110,14 +105,15 @@ export const GenericAvatar: React.FC<{
 						height: size,
 						alignItems: 'center',
 						justifyContent: 'center',
+						backgroundColor: colors['main-background'],
 					},
 				]}
 			>
 				{content}
 			</View>
-		</>
+		</View>
 	)
-}
+})
 
 const hardcodedAvatars = {
 	berty_dev_green_bg: GreenDevAvatar,
@@ -135,9 +131,9 @@ export const HardcodedAvatar: React.FC<{
 	style?: AvatarStyle
 	name: HardcodedAvatarKey
 	pressable?: boolean
-}> = ({ size, style, name, pressable }) => {
-	const { navigate } = useNavigation()
-	const [{ border }] = useStyles()
+}> = React.memo(({ size, style, name, pressable }) => {
+	const colors = useThemeColor()
+
 	let avatar = hardcodedAvatars[name]
 	if (!avatar) {
 		avatar = Logo
@@ -148,9 +144,15 @@ export const HardcodedAvatar: React.FC<{
 			activeOpacity={0.9}
 			disabled={!pressable}
 			onPress={() => {
-				navigate.modals.imageView({ images: [avatar], previewOnly: true })
+				navigate('Modals.ImageView', { images: [avatar], previewOnly: true })
 			}}
-			style={[{ borderRadius: size / 2, backgroundColor: 'white' }, border.shadow.medium, style]}
+			style={[
+				style,
+				{
+					borderRadius: size / 2,
+					backgroundColor: colors['main-background'],
+				},
+			]}
 		>
 			<Image
 				source={avatar}
@@ -162,34 +164,41 @@ export const HardcodedAvatar: React.FC<{
 			/>
 		</TouchableOpacity>
 	)
-}
+})
 
 export const AccountAvatar: React.FC<{
 	size: number
 	style?: AvatarStyle
 	isEditable?: boolean
-}> = ({ size, style, isEditable }) => {
+}> = React.memo(({ size, style, isEditable }) => {
 	const account = useAccount()
+	const colors = useThemeColor()
 	return (
 		<GenericAvatar
-			nameSeed={account?.displayName}
-			cid={account?.avatarCid}
+			nameSeed={account.displayName}
+			cid={account.avatarCid}
 			size={size}
-			colorSeed={account?.publicKey}
+			colorSeed={colors['main-text']}
 			style={style}
 			isEditable={isEditable}
 		/>
 	)
-}
+})
 
-export const NameAvatar: React.FC<{
+const NameAvatar: React.FC<{
 	colorSeed: Maybe<string>
 	size: number
 	style?: AvatarStyle
 	nameSeed: Maybe<string>
-}> = ({ colorSeed, size, style, nameSeed }) => {
-	const h = new SHA3(256).update(Buffer.from(colorSeed || '', 'base64')).digest()
+}> = React.memo(({ colorSeed, size, style, nameSeed }) => {
+	const colors = useThemeColor()
+
+	const h = new SHA3(256).update(colorSeed || '').digest()
 	const color = '#' + pal[h[0]]
+
+	const codePoint = (nameSeed || '?').codePointAt(0)
+	const char = codePoint ? String.fromCodePoint(codePoint) : '?'
+
 	return (
 		<View
 			style={[
@@ -204,12 +213,18 @@ export const NameAvatar: React.FC<{
 				},
 			]}
 		>
-			<Text style={{ color: 'white', fontSize: size * 0.5, includeFontPadding: false }}>
-				{(nameSeed || '?')[0].toUpperCase()}
-			</Text>
+			<UnifiedText
+				style={{
+					color: colors['reverted-main-text'],
+					fontSize: size * 0.5,
+					includeFontPadding: false,
+				}}
+			>
+				{char}
+			</UnifiedText>
 		</View>
 	)
-}
+})
 
 export const ContactAvatar: React.FC<{
 	publicKey: Maybe<string>
@@ -217,12 +232,10 @@ export const ContactAvatar: React.FC<{
 	style?: AvatarStyle
 	fallbackNameSeed?: Maybe<string>
 	pressable?: boolean
-}> = ({ publicKey, size, style, fallbackNameSeed, pressable }) => {
+}> = React.memo(({ publicKey, size, style, fallbackNameSeed, pressable }) => {
 	const contact = useContact(publicKey)
-	const ctx = useMsgrContext()
-	const suggestion = Object.values(ctx.persistentOptions?.suggestions).find(
-		(v) => v.pk === publicKey,
-	)
+	const persistentOptions = useSelector(selectPersistentOptions)
+	const suggestion = Object.values(persistentOptions?.suggestions).find(v => v.pk === publicKey)
 	if (suggestion) {
 		return (
 			<HardcodedAvatar
@@ -243,15 +256,16 @@ export const ContactAvatar: React.FC<{
 			pressable={pressable}
 		/>
 	)
-}
+})
 
 export const MemberAvatar: React.FC<{
 	publicKey: Maybe<string>
 	conversationPublicKey: Maybe<string>
 	size: number
 	pressable?: boolean
-}> = ({ publicKey, conversationPublicKey, size, pressable }) => {
-	const member = useMember({ publicKey, conversationPublicKey })
+}> = React.memo(({ publicKey, conversationPublicKey, size, pressable }) => {
+	const member = useMember(conversationPublicKey, publicKey)
+
 	return (
 		<GenericAvatar
 			cid={member?.avatarCid}
@@ -261,7 +275,7 @@ export const MemberAvatar: React.FC<{
 			pressable={pressable}
 		/>
 	)
-}
+})
 
 export const MultiMemberAvatar: React.FC<{
 	size: number
@@ -269,50 +283,57 @@ export const MultiMemberAvatar: React.FC<{
 	publicKey?: Maybe<string>
 	fallbackNameSeed?: Maybe<string>
 	pressable?: boolean
-}> = ({ size, style, publicKey, fallbackNameSeed, pressable }) => {
-	const ctx = useMsgrContext()
+}> = React.memo(({ size, style, publicKey, fallbackNameSeed, pressable }) => {
+	const persistentOptions = useSelector(selectPersistentOptions)
 	const conv = useConversation(publicKey)
-	const suggestion = Object.values(ctx.persistentOptions?.suggestions).find(
-		(v) => v.pk === publicKey,
-	)
-	let content: React.ReactElement
-	if (suggestion) {
-		content = (
-			<HardcodedAvatar
-				size={size}
-				style={style}
-				name={suggestion.icon as any}
-				pressable={pressable}
-			/>
-		)
-	} else {
-		content = (
-			<GenericAvatar
-				size={size}
-				style={style}
-				cid={conv?.avatarCid}
-				colorSeed={publicKey}
-				nameSeed={conv?.displayName || fallbackNameSeed}
-				pressable={pressable}
-			/>
-		)
-	}
-	const badgeSize = size / 3
-	class GroupBadge extends React.Component {
-		render = () => <HardcodedAvatar size={badgeSize} name={'group'} />
-	}
-	const Avatar = () => content
-	const WrappedAvatar = withBadge('', { Component: GroupBadge })(Avatar)
-	return <WrappedAvatar />
-}
+	// this useMemo prevents flickering
+	return React.useMemo(() => {
+		const suggestion = Object.values(persistentOptions?.suggestions).find(v => v.pk === publicKey)
+		let content: React.ReactElement
+		if (suggestion) {
+			content = (
+				<HardcodedAvatar
+					size={size}
+					style={style}
+					name={suggestion.icon as any}
+					pressable={pressable}
+				/>
+			)
+		} else {
+			content = (
+				<GenericAvatar
+					size={size}
+					style={style}
+					cid={conv?.avatarCid}
+					colorSeed={publicKey}
+					nameSeed={conv?.displayName || fallbackNameSeed}
+					pressable={pressable}
+				/>
+			)
+		}
+
+		// TODO: diff a OneToOne conversation icon and a MultiMember conversation icon
+		const Avatar = () => content
+		return <Avatar />
+	}, [
+		conv?.avatarCid,
+		conv?.displayName,
+		fallbackNameSeed,
+		persistentOptions?.suggestions,
+		pressable,
+		publicKey,
+		size,
+		style,
+	])
+})
 
 export const ConversationAvatar: React.FC<{
 	publicKey: Maybe<string>
 	size: number
 	style?: AvatarStyle
-}> = ({ publicKey, size, style }) => {
+}> = React.memo(({ publicKey, size, style }) => {
 	const conv = useConversation(publicKey)
-	const ctx = useMsgrContext()
+	const persistentOptions = useSelector(selectPersistentOptions)
 
 	if (conv) {
 		if (conv.type === beapi.messenger.Conversation.Type.MultiMemberType) {
@@ -322,12 +343,10 @@ export const ConversationAvatar: React.FC<{
 		}
 	}
 
-	const suggestion = Object.values(ctx.persistentOptions?.suggestions).find(
-		(v) => v.pk === publicKey,
-	)
+	const suggestion = Object.values(persistentOptions?.suggestions).find(v => v.pk === publicKey)
 	if (suggestion) {
 		return <HardcodedAvatar size={size} style={style} name={suggestion.icon as any} />
 	}
 
 	return <GenericAvatar size={size} style={style} cid='' colorSeed={publicKey} nameSeed={'C'} />
-}
+})

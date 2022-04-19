@@ -1,23 +1,25 @@
-import React from 'react'
+import React, { ComponentProps } from 'react'
 import { ScrollView, View } from 'react-native'
-import { useNavigation } from '@react-navigation/native'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '@ui-kitten/components'
 
-import { useStyles } from '@berty-tech/styles'
-import { useConversation, useMsgrContext, Maybe } from '@berty-tech/store/hooks'
-import { ScreenProps } from '@berty-tech/navigation'
+import { useStyles } from '@berty/styles'
+import { ScreenFC } from '@berty/navigation'
 import {
+	Maybe,
+	useThemeColor,
 	servicesAuthViaDefault,
 	useAccountServices,
 	serviceTypes,
 	replicateGroup,
-} from '@berty-tech/store/services'
-import beapi from '@berty-tech/api'
+	useMessengerClient,
+} from '@berty/store'
+import beapi from '@berty/api'
+import { useConversation } from '@berty/hooks'
 
-import HeaderSettings from '../shared-components/Header'
 import { ButtonSetting, FactionButtonSetting } from '../shared-components'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
+import { useSelector } from 'react-redux'
+import { selectProtocolClient } from '@berty/redux/reducers/ui.reducer'
 
 enum replicationServerStatus {
 	KnownServerEnabled,
@@ -53,7 +55,7 @@ const getAllReplicationStatusForConversation = (
 			}
 		}, {}) || {}
 
-	for (const s of services.filter((t) => t.serviceType === serviceTypes.Replication)) {
+	for (const s of services.filter(t => t.serviceType === serviceTypes.Replication)) {
 		if (typeof s.authenticationUrl !== 'string') {
 			continue
 		}
@@ -79,8 +81,6 @@ const getReplicationStatusIcon = (status: replicationServerStatus): string => {
 		case replicationServerStatus.UnknownServerEnabled:
 			return 'question-mark-circle-outline'
 	}
-
-	return ''
 }
 
 const getReplicationStatusColor = (status: replicationServerStatus): string => {
@@ -92,19 +92,19 @@ const getReplicationStatusColor = (status: replicationServerStatus): string => {
 		case replicationServerStatus.UnknownServerEnabled:
 			return 'green'
 	}
-
-	return ''
 }
 
 const ReplicateGroupContent: React.FC<{
 	conversationPublicKey?: Maybe<string>
-}> = ({ conversationPublicKey }) => {
-	const ctx = useMsgrContext()
-	const conversation = ctx.conversations[conversationPublicKey as string]
+	navigation: ComponentProps<typeof ReplicateGroupSettings>['navigation']
+}> = ({ conversationPublicKey, navigation }) => {
+	const client = useMessengerClient()
+	const conversation = useConversation(conversationPublicKey)
 	const services = useAccountServices()
-	const navigation = useNavigation()
-	const [{ margin, color, flex, padding }] = useStyles()
+	const [{ margin, flex, padding }] = useStyles()
+	const colors = useThemeColor()
 	const { t } = useTranslation()
+	const protocolClient = useSelector(selectProtocolClient)
 
 	const replicationStatus = getAllReplicationStatusForConversation(conversation, services)
 
@@ -112,7 +112,7 @@ const ReplicateGroupContent: React.FC<{
 		<View style={[flex.tiny, padding.medium, margin.bottom.medium]}>
 			{replicationStatus.length > 0 ? (
 				<FactionButtonSetting style={[margin.top.medium]}>
-					{replicationStatus.map((t) => (
+					{replicationStatus.map(t => (
 						<ButtonSetting
 							key={`${t.service.authenticationUrl}`}
 							name={`${t.service.authenticationUrl}`}
@@ -124,7 +124,7 @@ const ReplicateGroupContent: React.FC<{
 									return
 								}
 
-								return replicateGroup(ctx, conversationPublicKey || '', t.service.tokenId || '')
+								return replicateGroup(conversationPublicKey || '', t.service.tokenId || '', client)
 							}}
 						/>
 					))}
@@ -141,52 +141,42 @@ const ReplicateGroupContent: React.FC<{
 				icon='berty'
 				iconSize={28}
 				iconPack='custom'
-				iconColor={color.blue}
+				iconColor={colors['background-header']}
 				alone={true}
 				onPress={async () => {
-					await servicesAuthViaDefault(ctx)
+					await servicesAuthViaDefault(protocolClient)
 				}}
 			/>
 			<ButtonSetting
 				name={t('chat.replicate-group-settings.manage-add-button')}
 				icon='plus-circle-outline'
 				iconSize={30}
-				iconColor={color.blue}
+				iconColor={colors['background-header']}
 				alone={true}
-				onPress={() => navigation.navigate('Settings.ServicesAuth')}
+				onPress={() => navigation.navigate('Settings.BertyServices')}
 			/>
 		</View>
 	)
 }
 
-export const ReplicateGroupSettings: React.FC<ScreenProps.Chat.ReplicateGroupSettings> = ({
+export const ReplicateGroupSettings: ScreenFC<'Chat.ReplicateGroupSettings'> = ({
 	route,
+	navigation,
 }) => {
 	const { convId } = route.params
-	const [{ padding, flex }] = useStyles()
-	const { goBack } = useNavigation()
+	const [{ padding }] = useStyles()
 	const conv = useConversation(convId)
-	const { t } = useTranslation()
 
 	if (!conv) {
-		goBack()
+		navigation.goBack()
 		return null
 	}
 
 	return (
-		<Layout style={[flex.tiny]}>
-			<SwipeNavRecognizer>
-				<ScrollView contentContainerStyle={[padding.bottom.huge]} bounces={false}>
-					<HeaderSettings
-						actionIcon='edit-outline'
-						undo={goBack}
-						title={t('chat.replicate-group-settings.title')}
-					/>
-					<ReplicateGroupContent conversationPublicKey={conv.publicKey} />
-				</ScrollView>
-			</SwipeNavRecognizer>
+		<Layout style={{ flex: 1 }}>
+			<ScrollView contentContainerStyle={[padding.bottom.huge]} bounces={false}>
+				<ReplicateGroupContent conversationPublicKey={conv.publicKey} navigation={navigation} />
+			</ScrollView>
 		</Layout>
 	)
 }
-
-export default ReplicateGroupSettings

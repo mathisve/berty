@@ -39,7 +39,12 @@ public class LoggerDriver: NSObject, BertybridgeNativeLoggerDriverProtocol {
   public init(_ subsytem: String = "logger", _ category: String = "log") {
     self.subsytem = subsytem
     self.category = category
+    #if CFG_APPSTORE
+    self.scope = Visibility.hidden
+    #else
     self.scope = Visibility.visible
+    #endif
+
     self.isEnabled = true
   }
 
@@ -48,23 +53,21 @@ public class LoggerDriver: NSObject, BertybridgeNativeLoggerDriverProtocol {
       throw LoggerError.invalidLevel
     }
 
-    guard let out = message else {
-      throw LoggerError.emptyMessage
-    }
-
-    guard let subsystem = namespace else {
-      throw LoggerError.emptyNamespace
+    let out = message ?? ""
+    var subsystem: String
+    if let namespace = namespace, namespace != ""  {
+      subsystem = self.subsytem + "." + namespace
+    } else {
+      subsystem = self.subsytem
     }
 
     if #available(iOS 10.0, *) {
-        let logger = OSLog(subsystem: self.subsytem + "." + subsystem, category: self.category)
+        let logger = OSLog(subsystem: subsystem, category: self.category)
 
         var type: OSLogType
         switch level {
-            // @FIXME(gfanton): on some device: debug log dont show up on the Console.
-            // for the moment, use default type for debug
         case Level.debug:
-            type = .default
+            type = .debug
         case Level.info:
             type = .info
         case Level.warn:
@@ -77,7 +80,7 @@ public class LoggerDriver: NSObject, BertybridgeNativeLoggerDriverProtocol {
 
         switch self.scope {
         case Visibility.visible: os_log("[%{public}@] %{public}@", log: logger, type: type, ulevel, out)
-        case Visibility.hidden: os_log("[%{private}@] %{private}@", log: logger, type: type, ulevel, out)
+        case Visibility.hidden: os_log("[%{public}@] %{private}@", log: logger, type: type, ulevel, out)
         }
     } else {
         NSLog("[%@] [%@]: %@", level.rawValue, self.subsytem + "." + subsytem, out)

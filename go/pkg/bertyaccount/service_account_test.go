@@ -4,8 +4,12 @@ import (
 	"encoding/hex"
 	"testing"
 
+	// nolint:staticcheck // cannot use the new protobuf API while keeping gogoproto
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+
+	"berty.tech/berty/v2/go/internal/initutil"
+	"berty.tech/berty/v2/go/pkg/accounttypes"
 )
 
 func TestFailingProto(t *testing.T) {
@@ -18,7 +22,7 @@ func TestFailingProto(t *testing.T) {
 	 Field #3: 18 Varint Value = 1607959997100877, Hex = CD-E6-C2-E3-E5-CD-ED-02
 	*/
 
-	meta := &AccountMetadata{}
+	meta := &accounttypes.AccountMetadata{}
 	/*
 		-> diff. 3rd field
 
@@ -37,5 +41,52 @@ func TestFailingProto(t *testing.T) {
 	*/
 
 	err = proto.Unmarshal(metaBytes, meta)
+	require.Error(t, err)
+}
+
+func TestSanitizeCheckMultiAddr(t *testing.T) {
+	err := SanitizeCheckMultiAddr([]string{})
+	require.NoError(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",      // mars.i.ipfs.io
+		"/ip4/104.131.131.82/udp/4001/quic/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", // mars.i.ipfs.io
+	})
+	require.NoError(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{initutil.KeywordDefault})
+	require.NoError(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{initutil.KeywordNone})
+	require.NoError(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{
+		initutil.KeywordDefault,
+		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+	})
+	require.NoError(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{
+		initutil.KeywordNone,
+		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+	})
+	require.Error(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+		"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",      // mars.i.ipfs.io
+		"/ip4/104.131.131.82/udp/4001/quic/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", // mars.i.ipfs.io
+		"failed",
+	})
+	require.Error(t, err)
+
+	err = SanitizeCheckMultiAddr([]string{"failed"})
 	require.Error(t, err)
 }

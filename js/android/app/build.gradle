@@ -1,7 +1,7 @@
-apply plugin: "com.android.application"
+apply plugin: 'com.android.application'
 
 // TODO: remove this after closed beta
-apply plugin: 'com.google.firebase.crashlytics'
+apply plugin: 'com.google.gms.google-services'
 
 import com.android.build.OutputFile
 
@@ -82,6 +82,7 @@ import com.android.build.OutputFile
 
 project.ext.react = [
     enableHermes: false,  // clean and rebuild if changing
+    entryFile: "index.ts",
 ]
 
 apply from: "../../node_modules/react-native/react.gradle"
@@ -94,12 +95,12 @@ apply from: "../../node_modules/react-native/react.gradle"
  * Upload all the APKs to the Play Store and people will download
  * the correct one based on the CPU architecture of their device.
  */
-def enableSeparateBuildPerCPUArchitecture = false
+def enableSeparateBuildPerCPUArchitecture = true
 
 /**
  * Run Proguard to shrink the Java bytecode in release builds.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore.
@@ -125,6 +126,7 @@ def enableHermes = project.ext.react.get("enableHermes", false);
 
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
+    ndkVersion rootProject.ext.ndkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -135,8 +137,6 @@ android {
         applicationId "tech.berty.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
 
         missingDimensionStrategy 'react-native-camera', 'general'
         multiDexEnabled true // fix for "The number of method references in a .dex file cannot exceed 64K"
@@ -150,6 +150,27 @@ android {
 
         addEnvVar("SHAKE_API_ID")
         addEnvVar("SHAKE_API_SECRET")
+
+        def generateVersionCode = {
+            def result = "git rev-list HEAD --count".execute().text.trim() //unix
+            if(result.empty) result = "PowerShell -Command git rev-list HEAD --count".execute().text.trim() //windows
+            if(result.empty) throw new RuntimeException("Could not generate versionCode on this platform? Cmd output: ${result.text}")
+            logger.info("Generated versionCode: ${result}")
+            return result.toInteger()
+        }
+
+        def generateVersionName = {
+            def result = "go run -mod=readonly -modfile=${rootDir.getPath()}/../../go.mod github.com/mdomke/git-semver/v5".execute().text.trim() // unix
+            if(result.empty) result = "PowerShell -Command go run -mod=readonly -modfile=${rootDir.getPath()}/../../go.mod github.com/mdomke/git-semver/v5".execute().text.trim() //windows
+            if(result.empty) throw new RuntimeException("Could not generate versionName on this platform? Cmd output: ${result.text}")
+            result = result.substring(1)
+            result = result.split('-')[0]
+            logger.info("Generated versionName: ${result}")
+            return result
+        }
+
+        versionCode generateVersionCode()
+        versionName generateVersionName()
     }
     splits {
         abi {
@@ -177,11 +198,8 @@ android {
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-
-            firebaseCrashlytics {
-                nativeSymbolUploadEnabled true
-            }
         }
         releaseStaff {
             initWith release
@@ -200,13 +218,50 @@ android {
         variant.outputs.each { output ->
             // For each separate APK per architecture, set a unique version code as described here:
             // https://developer.android.com/studio/build/configure-apk-splits.html
+            // Example: versionCode 1 will generate 1001 for armeabi-v7a, 1002 for x86, etc.
             def versionCodes = ["armeabi-v7a": 1, "x86": 2, "arm64-v8a": 3, "x86_64": 4]
             def abi = output.getFilter(OutputFile.ABI)
             if (abi != null) {  // null for the universal-debug, universal-release variants
                 output.versionCodeOverride =
-                        versionCodes.get(abi) * 1048576 + defaultConfig.versionCode
+                    defaultConfig.versionCode * 1000 + versionCodes.get(abi)
             }
 
+        }
+    }
+
+    packagingOptions {
+        // Make sure libjsc.so does not packed in APK
+        exclude "**/libjsc.so"
+        // Fix for react-native-reanimated using v8
+        pickFirst "**/libv8executor.so"
+    }
+}
+
+// Auto-build gomobile.aar by running Makefile rule
+task makeDeps(description: 'Build gomobile.aar (Berty go core)') {
+    outputs.files fileTree(dir: "${rootDir.getPath()}/libs", include: ["*.jar", "*.aar"])
+
+    doLast {
+        if (System.properties['os.name'].toLowerCase().contains('windows')) {
+            logger.warn("Warning: can't run make on Windows, you must build gomobile.aar manually")
+            return
+        }
+
+        def checkMakeInPath = exec {
+            standardOutput = new ByteArrayOutputStream() // equivalent to '> /dev/null'
+            ignoreExitValue = true
+            commandLine 'bash', '-l', '-c', 'command -v make'
+        }
+
+        if (checkMakeInPath.getExitValue() == 0) {
+            exec {
+                def makefileDir = "${rootDir.getPath()}/.."
+                workingDir makefileDir
+                environment 'PWD', makefileDir
+                commandLine 'make', 'android.app_deps'
+            }
+        } else {
+            logger.warn('Warning: make command not found in PATH')
         }
     }
 }
@@ -216,7 +271,14 @@ dependencies {
     //noinspection GradleDynamicVersion
     implementation "com.facebook.react:react-native:+"  // From node_modules
 
-    implementation project(path: ":react-native-interactable") // remove when https://github.com/wix/react-native-interactable/pull/288 is merged
+    // firebase fcm
+    implementation platform('com.google.firebase:firebase-bom:28.1.0')
+    implementation 'com.google.firebase:firebase-messaging'
+
+    // Add v8-android - prebuilt libv8android.so into APK
+    implementation 'org.chromium:v8-android:9.88.+'
+
+    implementation 'androidx.viewpager2:viewpager2:1.0.0'
 
     implementation 'com.facebook.fresco:animated-gif:2.0.0' // For animated GIF support
 
@@ -227,6 +289,10 @@ dependencies {
     // Add Android Nearby
     implementation "com.google.android.gms:play-services-nearby:16.0.0"
     implementation 'com.google.android.gms:play-services-location:17.0.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.3.1'
+
+    // Add keystore, 1.1 is required to use the MasterKey class
+    implementation "androidx.security:security-crypto:1.1.0-alpha03"
 
     debugImplementation("com.facebook.flipper:flipper:${FLIPPER_VERSION}") {
       exclude group:'com.facebook.fbjni'
@@ -249,7 +315,7 @@ dependencies {
         implementation jscFlavor
     }
 
-    implementation fileTree(dir: "../libs", include: ["*.jar", "*.aar"]) // go lib
+    implementation makeDeps.outputs.files
 }
 
 // Run this once to be able to run the application with BUCK

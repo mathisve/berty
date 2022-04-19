@@ -1,25 +1,31 @@
 import React, { useState } from 'react'
-import { Text as TextNative, TouchableOpacity, View } from 'react-native'
-import { Icon, Text } from '@ui-kitten/components'
+import { ActivityIndicator, TouchableOpacity, View } from 'react-native'
+import { Icon } from '@ui-kitten/components'
 import { Buffer } from 'buffer'
+import { useTranslation } from 'react-i18next'
+import { useNavigation } from '@berty/navigation'
+import { CommonActions } from '@react-navigation/native'
 
-import { useClient, useConversation, useOneToOneContact } from '@berty-tech/store/hooks'
-import { useStyles } from '@berty-tech/styles'
-import { InteractionGroupInvitation } from '@berty-tech/store/types.gen'
+import { useMessengerClient, useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
+import { InteractionGroupInvitation } from '@berty/store/types.gen'
+import { useOneToOneContact, useConversation } from '@berty/hooks'
 
 import { MessageSystemWrapper } from './MessageSystemWrapper'
 import { MultiMemberAvatar } from '../../avatars'
 import { base64ToURLBase64 } from '../../utils'
+import { UnifiedText } from '../../shared-components/UnifiedText'
 
 export const MessageInvitationButton: React.FC<{
-	onPress?: any
+	onPress?: () => void
 	activeOpacity: any
 	backgroundColor: any
 	icon: any
 	color: any
-	title: any
+	title: string
 	styleOpacity?: any
 	disabled?: boolean
+	loading?: boolean
 }> = ({
 	onPress,
 	activeOpacity,
@@ -29,6 +35,7 @@ export const MessageInvitationButton: React.FC<{
 	title,
 	styleOpacity,
 	disabled = false,
+	loading,
 }) => {
 	const [{ flex, padding, border, width, row, text, opacity }] = useStyles()
 	return (
@@ -50,18 +57,21 @@ export const MessageInvitationButton: React.FC<{
 					{ backgroundColor },
 				]}
 			>
-				<Icon name={icon} width={24} height={24} fill={color} style={[opacity(styleOpacity)]} />
-				<TextNative
+				{loading ? (
+					<ActivityIndicator />
+				) : (
+					<Icon name={icon} width={24} height={24} fill={color} style={[opacity(styleOpacity)]} />
+				)}
+				<UnifiedText
 					style={[
 						text.align.center,
-						text.size.scale(14),
-						text.bold.medium,
+						text.bold,
 						opacity(styleOpacity),
-						{ fontFamily: 'Open Sans', color },
+						{ color, textTransform: 'uppercase' },
 					]}
 				>
 					{title}
-				</TextNative>
+				</UnifiedText>
 			</View>
 		</TouchableOpacity>
 	)
@@ -69,19 +79,26 @@ export const MessageInvitationButton: React.FC<{
 
 const MessageInvitationSent: React.FC<{ message: InteractionGroupInvitation }> = ({ message }) => {
 	const [{ text }] = useStyles()
-	const conversationContact = useOneToOneContact(message.conversationPublicKey)
+	const { t }: any = useTranslation()
+
+	const conversationContact = useOneToOneContact(message.conversationPublicKey || '')
 	return (
-		<Text style={[text.size.scale(14), text.align.center]}>
-			You invited {conversationContact?.displayName || 'this contact'} to a group! 💌
-		</Text>
+		<UnifiedText style={[text.size.scale(14), text.align.center]}>
+			{`${t('chat.one-to-one.contact-request-box.you-invited')} ${
+				conversationContact?.displayName || t('chat.one-to-one.contact-request-box.this-contact')
+			} ${t('chat.one-to-one.contact-request-box.to-a-group')}`}
+		</UnifiedText>
 	)
 }
 
 const MessageInvitationReceived: React.FC<{ message: InteractionGroupInvitation }> = ({
 	message,
 }) => {
-	const [{ row, flex, text, margin, color }] = useStyles()
-	const client = useClient()
+	const [{ row, flex, text, margin }] = useStyles()
+	const colors = useThemeColor()
+	const client = useMessengerClient()
+	const { t }: any = useTranslation()
+	const { dispatch } = useNavigation()
 	const [error, setError] = useState(false)
 	const [{ convPk, displayName }, setPdlInfo] = useState({ convPk: '', displayName: '' })
 	const [accepting, setAccepting] = useState(false)
@@ -97,7 +114,7 @@ const MessageInvitationReceived: React.FC<{ message: InteractionGroupInvitation 
 				.parseDeepLink({
 					link,
 				})
-				.then((reply) => {
+				.then(reply => {
 					setPdlInfo({
 						displayName: reply.link?.bertyGroup?.displayName || '',
 						convPk: base64ToURLBase64(
@@ -105,7 +122,7 @@ const MessageInvitationReceived: React.FC<{ message: InteractionGroupInvitation 
 						),
 					})
 				})
-				.catch((err) => {
+				.catch(err => {
 					console.warn(err)
 					setError(true)
 				})
@@ -117,7 +134,22 @@ const MessageInvitationReceived: React.FC<{ message: InteractionGroupInvitation 
 			setAccepting(true)
 			client
 				.conversationJoin({ link })
-				.catch((err) => {
+				.then(() => {
+					dispatch(
+						CommonActions.reset({
+							routes: [
+								{ name: 'Main.Home' },
+								{
+									name: 'Chat.Group',
+									params: {
+										convId: convPk,
+									},
+								},
+							],
+						}),
+					)
+				})
+				.catch(err => {
 					console.warn(err)
 					setError(true)
 				})
@@ -125,46 +157,31 @@ const MessageInvitationReceived: React.FC<{ message: InteractionGroupInvitation 
 					setAccepting(false)
 				})
 		}
-	}, [client, link, conv, convPk, accepting, error])
+	}, [client, convPk, conv, accepting, error, link, dispatch])
 
 	return (
 		<>
 			<View style={[row.left, flex.align.center, flex.justify.center]}>
-				<TextNative
-					style={[
-						text.color.black,
-						text.size.scale(15),
-						text.bold.medium,
-						{ fontFamily: 'Open Sans' },
-					]}
-				>
-					GROUP INVITATION
-				</TextNative>
+				<UnifiedText style={[text.bold, { textTransform: 'uppercase' }]}>
+					{t('chat.one-to-one.contact-request-box.group-invitation')}
+				</UnifiedText>
 			</View>
 			<View style={[margin.top.small, flex.align.center, flex.justify.center]}>
 				<View style={margin.bottom.small}>
 					<MultiMemberAvatar publicKey={convPk} size={40} fallbackNameSeed={displayName} />
 				</View>
-				<TextNative
-					style={[
-						text.color.black,
-						text.size.scale(13),
-						text.bold.small,
-						margin.bottom.small,
-						{ fontFamily: 'Open Sans' },
-					]}
-				>
+				<UnifiedText style={[text.size.small, text.light, margin.bottom.small]}>
 					{displayName}
-				</TextNative>
+				</UnifiedText>
 			</View>
 			<View style={[row.center, flex.justify.spaceEvenly, flex.align.center, margin.top.medium]}>
 				<MessageInvitationButton
 					onPress={undefined} // TODO: Command to refuse invitation
 					activeOpacity={!conv ? 0.2 : 1}
 					icon='close-outline'
-					color={color.grey}
-					title='REFUSE'
-					backgroundColor={color.white}
+					color={colors['secondary-text']}
+					title={t('chat.one-to-one.contact-request-box.refuse-button')}
+					backgroundColor={colors['main-background']}
 					styleOpacity={0.6}
 					disabled
 				/>
@@ -172,26 +189,42 @@ const MessageInvitationReceived: React.FC<{ message: InteractionGroupInvitation 
 					onPress={handleAccept}
 					activeOpacity={!conv ? 0.2 : 1}
 					icon='checkmark-outline'
-					color={error ? color.grey : !conv ? color.blue : color.green}
-					title={!conv ? 'ACCEPT' : 'ACCEPTED'}
-					backgroundColor={error ? color.white : !conv ? color.light.blue : color.light.green}
+					color={
+						error
+							? colors['secondary-text']
+							: !conv
+							? colors['background-header']
+							: colors['secondary-text']
+					}
+					title={
+						!conv
+							? t('chat.one-to-one.contact-request-box.accept-button')
+							: t('chat.one-to-one.contact-request-box.accepted-button')
+					}
+					backgroundColor={
+						error
+							? colors['main-background']
+							: !conv
+							? colors['positive-asset']
+							: `${colors['secondary-text']}20`
+					}
 					styleOpacity={acceptDisabled ? 0.6 : undefined}
 					disabled={acceptDisabled ? true : false}
 				/>
 			</View>
 			{error && (
-				<Text
+				<UnifiedText
 					style={[
 						margin.top.small,
 						margin.horizontal.small,
 						text.size.small,
-						text.bold.small,
-						text.color.red,
+						text.light,
 						text.align.center,
+						{ color: colors['warning-asset'] },
 					]}
 				>
-					Error adding you to the group ☹️ Our bad!
-				</Text>
+					{t('chat.one-to-one.contact-request-box.error')}
+				</UnifiedText>
 			)}
 		</>
 	)

@@ -1,22 +1,44 @@
 import React, { useState } from 'react'
-import { View, ScrollView, ActivityIndicator } from 'react-native'
-import { Text } from '@ui-kitten/components'
+import { View, ScrollView, ActivityIndicator, StatusBar } from 'react-native'
 import { useTranslation } from 'react-i18next'
 
-import { useStyles } from '@berty-tech/styles'
-import { useContacts } from '@berty-tech/store/hooks'
-import { useNavigation, ScreenProps } from '@berty-tech/navigation'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store'
+import { ScreenFC } from '@berty/navigation'
+import { useContact, useConversation } from '@berty/hooks'
 
-import { ButtonSetting } from '../shared-components/SettingsButtons'
 import { FingerprintContent } from '../shared-components/FingerprintContent'
 import { TabBar } from '../shared-components/TabBar'
-import HeaderSettings from '../shared-components/Header'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
 import { ContactAvatar } from '../avatars'
+import UserDevicesList from '@berty/components/chat/DeviceList'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const ContactSettingsHeaderContent: React.FC = ({ children }) => {
 	const [{ margin }] = useStyles()
 	return <View style={[margin.top.big]}>{children}</View>
+}
+
+const InfoTab: React.FC<{ contactPk: string }> = ({ contactPk }) => {
+	const { t } = useTranslation()
+	const contact = useContact(contactPk)
+	const conv = useConversation(contact?.conversationPublicKey || '')
+	const [{ text, padding }] = useStyles()
+
+	return (
+		<>
+			<UnifiedText style={[text.light, padding.left.small]}>
+				{contact?.displayName || ''}
+			</UnifiedText>
+			<UserDevicesList conversationPk={contact?.conversationPublicKey || ''} memberPk={contactPk} />
+			<UnifiedText style={[text.light, padding.left.small]}>
+				{t('chat.contact-settings.my-devices')}
+			</UnifiedText>
+			<UserDevicesList
+				conversationPk={contact?.conversationPublicKey || ''}
+				memberPk={conv?.localMemberPublicKey || ''}
+			/>
+		</>
+	)
 }
 
 const SelectedContent: React.FC<{ contentName: string; publicKey: string }> = ({
@@ -26,13 +48,16 @@ const SelectedContent: React.FC<{ contentName: string; publicKey: string }> = ({
 	switch (contentName) {
 		case 'fingerprint':
 			return <FingerprintContent seed={publicKey} isEncrypted={false} />
+		case 'info':
+			return <InfoTab contactPk={publicKey} />
 		default:
-			return <Text>Error: Unknown content name "{contentName}"</Text>
+			return <UnifiedText>Error: Unknown content name "{contentName}"</UnifiedText>
 	}
 }
 
 const ContactSettingsHeader: React.FC<{ contact: any }> = ({ contact }) => {
-	const [{ border, background, padding, row, absolute, text }] = useStyles()
+	const [{ border, padding, row, absolute, text }] = useStyles()
+	const colors = useThemeColor()
 	const { t } = useTranslation()
 	const [selectedContent, setSelectedContent] = useState('fingerprint')
 
@@ -41,18 +66,18 @@ const ContactSettingsHeader: React.FC<{ contact: any }> = ({ contact }) => {
 			<View
 				style={[
 					border.radius.scale(30),
-					background.white,
 					padding.horizontal.medium,
 					padding.bottom.medium,
+					{ backgroundColor: colors['main-background'] },
 				]}
 			>
 				<View style={[row.item.justify, absolute.scale({ top: -50 })]}>
 					<ContactAvatar size={100} publicKey={contact.publicKey} />
 				</View>
 				<View style={[padding.horizontal.medium, padding.bottom.medium, padding.top.scale(65)]}>
-					<Text style={[text.size.big, text.color.black, text.align.center, text.bold.small]}>
+					<UnifiedText style={[text.size.big, text.align.center, text.light]}>
 						{contact.displayName}
-					</Text>
+					</UnifiedText>
 					<TabBar
 						tabs={[
 							{
@@ -65,15 +90,6 @@ const ContactSettingsHeader: React.FC<{ contact: any }> = ({ contact }) => {
 								key: 'info',
 								name: t('chat.contact-settings.info'),
 								icon: 'info-outline',
-								buttonDisabled: true,
-							},
-							{
-								key: 'devices',
-								name: t('chat.contact-settings.devices'),
-								icon: 'smartphone',
-								iconPack: 'feather',
-								iconTransform: [{ rotate: '22.5deg' }, { scale: 0.8 }],
-								buttonDisabled: true,
 							},
 						]}
 						onTabChange={setSelectedContent}
@@ -87,52 +103,14 @@ const ContactSettingsHeader: React.FC<{ contact: any }> = ({ contact }) => {
 	)
 }
 
-const DeleteContactButton: React.FC<{ id: string }> = ({ id }) => {
-	const [{ color }] = useStyles()
-	// const deleteContact = Messenger.useDeleteContact()
-	const deleteContact = ({ id }: { id: string }) => {
-		console.warn(`attempted to delete ${id}, operation not implemented`)
-	}
-	const { t } = useTranslation()
-	return (
-		<ButtonSetting
-			name={t('chat.contact-settings.delete-button')}
-			icon='trash-2-outline'
-			iconColor={color.red}
-			onPress={() => deleteContact({ id })}
-			disabled
-		/>
-	)
-}
-
-const ContactSettingsBody: React.FC<{ id: string }> = ({ id }) => {
-	const [{ padding, color }] = useStyles()
-	const { t } = useTranslation()
-	return (
-		<View style={padding.medium}>
-			<ButtonSetting
-				name={t('chat.contact-settings.mark-button')}
-				icon='checkmark-circle-2'
-				iconDependToggle
-				toggled
-				disabled
-			/>
-			<ButtonSetting
-				name={t('chat.contact-settings.block-button')}
-				icon='slash-outline'
-				iconColor={color.red}
-				disabled
-			/>
-			<DeleteContactButton id={id} />
-		</View>
-	)
-}
-
-export const ContactSettings: React.FC<ScreenProps.Chat.ContactSettings> = ({ route }) => {
+export const ContactSettings: ScreenFC<'Chat.ContactSettings'> = ({
+	route,
+	navigation: { goBack },
+}) => {
 	const { contactId } = route.params
-	const { goBack } = useNavigation()
-	const contact: any = (useContacts() as any)[contactId] || null
-	const [{ background, flex, padding }] = useStyles()
+	const colors = useThemeColor()
+	const contact = useContact(contactId)
+	const [{ padding }] = useStyles()
 	if (!contact) {
 		goBack()
 		return (
@@ -144,17 +122,20 @@ export const ContactSettings: React.FC<ScreenProps.Chat.ContactSettings> = ({ ro
 		)
 	}
 	return (
-		<ScrollView
-			style={[flex.tiny, background.white]}
-			contentContainerStyle={[padding.bottom.huge]}
-			bounces={false}
-		>
-			<SwipeNavRecognizer>
-				<HeaderSettings actionIcon='upload' undo={goBack}>
-					<ContactSettingsHeader contact={contact} />
-				</HeaderSettings>
-				<ContactSettingsBody id={contact.publicKey} />
-			</SwipeNavRecognizer>
-		</ScrollView>
+		<>
+			<View style={{ flex: 1 }}>
+				<StatusBar backgroundColor={colors['background-header']} barStyle='light-content' />
+				<ScrollView
+					style={{ backgroundColor: colors['main-background'], flex: 1 }}
+					bounces={false}
+					contentContainerStyle={[padding.bottom.medium]}
+				>
+					<View style={[padding.medium, { backgroundColor: colors['background-header'] }]}>
+						<ContactSettingsHeader contact={contact} />
+					</View>
+					{/* <ContactSettingsBody id={contact.publicKey} /> */}
+				</ScrollView>
+			</View>
+		</>
 	)
 }

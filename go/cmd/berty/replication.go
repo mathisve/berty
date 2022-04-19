@@ -7,17 +7,23 @@ import (
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 
-	"berty.tech/berty/v2/go/pkg/bertyprotocol"
+	"berty.tech/berty/v2/go/pkg/authtypes"
+	"berty.tech/berty/v2/go/pkg/bertyreplication"
+	"berty.tech/berty/v2/go/pkg/replicationtypes"
 )
 
 func replicationServerCommand() *ffcli.Command {
 	fsBuilder := func() (*flag.FlagSet, error) {
 		fs := flag.NewFlagSet("berty repl-server", flag.ExitOnError)
 		fs.String("config", "", "config file (optional)")
+		manager.Session.Kind = "cli.replication"
 		manager.SetupLoggingFlags(fs) // also available at root level
 		manager.SetupProtocolAuth(fs)
 		manager.SetupLocalProtocolServerFlags(fs)
 		manager.SetupDefaultGRPCListenersFlags(fs)
+
+		// set serviceid for needed by push server
+		manager.Node.Protocol.ServiceID = authtypes.ServiceReplicationID
 		return fs, nil
 	}
 
@@ -33,8 +39,6 @@ func replicationServerCommand() *ffcli.Command {
 				return flag.ErrHelp
 			}
 
-			var err error
-
 			if manager.Node.Protocol.AuthSecret == "" {
 				return fmt.Errorf("node.auth-secret cannot be empty")
 			}
@@ -43,6 +47,7 @@ func replicationServerCommand() *ffcli.Command {
 				return fmt.Errorf("node.auth-pk cannot be empty")
 			}
 
+			var err error
 			server, mux, err := manager.GetGRPCServer()
 			if err != nil {
 				return err
@@ -53,7 +58,7 @@ func replicationServerCommand() *ffcli.Command {
 				return err
 			}
 
-			rootDS, err := manager.GetRootDatastore()
+			db, err := manager.GetReplicationDB()
 			if err != nil {
 				return err
 			}
@@ -63,13 +68,13 @@ func replicationServerCommand() *ffcli.Command {
 				return err
 			}
 
-			replicationService, err := bertyprotocol.NewReplicationService(ctx, rootDS, odb, logger)
+			replicationService, err := bertyreplication.NewReplicationService(ctx, db, odb, logger)
 			if err != nil {
 				return err
 			}
 
-			bertyprotocol.RegisterReplicationServiceServer(server, replicationService)
-			if err := bertyprotocol.RegisterReplicationServiceHandlerServer(ctx, mux, replicationService); err != nil {
+			replicationtypes.RegisterReplicationServiceServer(server, replicationService)
+			if err := replicationtypes.RegisterReplicationServiceHandlerServer(ctx, mux, replicationService); err != nil {
 				return err
 			}
 

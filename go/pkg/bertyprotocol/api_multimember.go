@@ -8,10 +8,14 @@ import (
 
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
+	"berty.tech/berty/v2/go/pkg/tyber"
 )
 
 // MultiMemberGroupCreate creates a new MultiMember group
-func (s *service) MultiMemberGroupCreate(ctx context.Context, req *protocoltypes.MultiMemberGroupCreate_Request) (*protocoltypes.MultiMemberGroupCreate_Reply, error) {
+func (s *service) MultiMemberGroupCreate(ctx context.Context, req *protocoltypes.MultiMemberGroupCreate_Request) (_ *protocoltypes.MultiMemberGroupCreate_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, s.logger, "Creating MultiMember group")
+	defer func() { endSection(err, "") }()
+
 	g, sk, err := NewGroupMultiMember()
 	if err != nil {
 		return nil, errcode.ErrCryptoKeyGeneration.Wrap(err)
@@ -22,16 +26,16 @@ func (s *service) MultiMemberGroupCreate(ctx context.Context, req *protocoltypes
 		return nil, errcode.ErrOrbitDBAppend.Wrap(err)
 	}
 
-	s.lock.Lock()
-	s.groups[string(g.PublicKey)] = g
-	s.lock.Unlock()
+	if err := s.groupDatastore.Put(ctx, g); err != nil {
+		return nil, errcode.ErrInternal.Wrap(err)
+	}
 
-	err = s.activateGroup(sk.GetPublic(), false)
+	err = s.activateGroup(ctx, sk.GetPublic(), false)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(fmt.Errorf("unable to activate group: %w", err))
 	}
 
-	cg, err := s.getContextGroupForID(g.PublicKey)
+	cg, err := s.GetContextGroupForID(g.PublicKey)
 	if err != nil {
 		return nil, errcode.ErrOrbitDBAppend.Wrap(err)
 	}
@@ -47,9 +51,11 @@ func (s *service) MultiMemberGroupCreate(ctx context.Context, req *protocoltypes
 }
 
 // MultiMemberGroupJoin joins an existing MultiMember group using an invitation
-func (s *service) MultiMemberGroupJoin(ctx context.Context, req *protocoltypes.MultiMemberGroupJoin_Request) (*protocoltypes.MultiMemberGroupJoin_Reply, error) {
-	_, err := s.accountGroup.MetadataStore().GroupJoin(ctx, req.Group)
-	if err != nil {
+func (s *service) MultiMemberGroupJoin(ctx context.Context, req *protocoltypes.MultiMemberGroupJoin_Request) (_ *protocoltypes.MultiMemberGroupJoin_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, s.logger, "Joining MultiMember group")
+	defer func() { endSection(err, "") }()
+
+	if _, err := s.accountGroup.MetadataStore().GroupJoin(ctx, req.Group); err != nil {
 		return nil, errcode.ErrOrbitDBAppend.Wrap(err)
 	}
 
@@ -57,7 +63,10 @@ func (s *service) MultiMemberGroupJoin(ctx context.Context, req *protocoltypes.M
 }
 
 // MultiMemberGroupLeave leaves a previously joined MultiMember group
-func (s *service) MultiMemberGroupLeave(ctx context.Context, req *protocoltypes.MultiMemberGroupLeave_Request) (*protocoltypes.MultiMemberGroupLeave_Reply, error) {
+func (s *service) MultiMemberGroupLeave(ctx context.Context, req *protocoltypes.MultiMemberGroupLeave_Request) (_ *protocoltypes.MultiMemberGroupLeave_Reply, err error) {
+	ctx, _, endSection := tyber.Section(ctx, s.logger, "Leaving MultiMember group")
+	defer func() { endSection(err, "") }()
+
 	pk, err := crypto.UnmarshalEd25519PublicKey(req.GroupPK)
 	if err != nil {
 		return nil, errcode.ErrDeserialization.Wrap(err)
@@ -75,7 +84,7 @@ func (s *service) MultiMemberGroupLeave(ctx context.Context, req *protocoltypes.
 
 // MultiMemberGroupAliasResolverDisclose sends an deviceKeystore identity proof to the group members
 func (s *service) MultiMemberGroupAliasResolverDisclose(ctx context.Context, req *protocoltypes.MultiMemberGroupAliasResolverDisclose_Request) (*protocoltypes.MultiMemberGroupAliasResolverDisclose_Reply, error) {
-	cg, err := s.getContextGroupForID(req.GroupPK)
+	cg, err := s.GetContextGroupForID(req.GroupPK)
 	if err != nil {
 		return nil, errcode.ErrGroupMemberUnknownGroupID.Wrap(err)
 	}
@@ -95,7 +104,7 @@ func (s *service) MultiMemberGroupAdminRoleGrant(context.Context, *protocoltypes
 
 // MultiMemberGroupInvitationCreate creates a group invitation
 func (s *service) MultiMemberGroupInvitationCreate(ctx context.Context, req *protocoltypes.MultiMemberGroupInvitationCreate_Request) (*protocoltypes.MultiMemberGroupInvitationCreate_Reply, error) {
-	cg, err := s.getContextGroupForID(req.GroupPK)
+	cg, err := s.GetContextGroupForID(req.GroupPK)
 	if err != nil {
 		return nil, errcode.ErrGroupMemberUnknownGroupID.Wrap(err)
 	}

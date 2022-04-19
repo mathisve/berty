@@ -13,6 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/stretchr/testify/require"
 
+	"berty.tech/berty/v2/go/internal/cryptoutil"
+	"berty.tech/berty/v2/go/internal/datastoreutil"
 	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/internal/testutil"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
@@ -21,7 +23,7 @@ import (
 )
 
 func Test_service_exportAccountKey(t *testing.T) {
-	ctx, cancel, mn, rdvPeer := testHelperIPFSSetUp(t)
+	ctx, cancel, mn, rdvPeer := TestHelperIPFSSetUp(t)
 	defer cancel()
 
 	dsA := dsync.MutexWrap(ds.NewMapDatastore())
@@ -69,7 +71,7 @@ func Test_service_exportAccountKey(t *testing.T) {
 }
 
 func Test_service_exportAccountProofKey(t *testing.T) {
-	ctx, cancel, mn, rdvPeer := testHelperIPFSSetUp(t)
+	ctx, cancel, mn, rdvPeer := TestHelperIPFSSetUp(t)
 	defer cancel()
 
 	dsA := dsync.MutexWrap(ds.NewMapDatastore())
@@ -116,13 +118,13 @@ func Test_service_exportAccountProofKey(t *testing.T) {
 	require.True(t, accountProofSK.Equals(sk))
 }
 
-func TestUnstableRestoreAccount(t *testing.T) {
-	testutil.FilterStability(t, testutil.Unstable)
+func TestFlappyRestoreAccount(t *testing.T) {
+	testutil.FilterStability(t, testutil.Flappy)
 
 	logger, cleanup := testutil.Logger(t)
 	defer cleanup()
 
-	ctx, cancel, mn, rdvPeer := testHelperIPFSSetUp(t)
+	ctx, cancel, mn, rdvPeer := TestHelperIPFSSetUp(t)
 	defer cancel()
 
 	tmpFile, err := ioutil.TempFile(os.TempDir(), "test-export-")
@@ -199,7 +201,7 @@ func TestUnstableRestoreAccount(t *testing.T) {
 		})
 		defer cleanupNodeB()
 
-		dksB := NewDeviceKeystore(ipfsutil.NewDatastoreKeystore(ipfsutil.NewNamespacedDatastore(dsB, ds.NewKey(NamespaceDeviceKeystore))))
+		dksB := cryptoutil.NewDeviceKeystore(ipfsutil.NewDatastoreKeystore(datastoreutil.NewNamespacedDatastore(dsB, ds.NewKey(NamespaceDeviceKeystore))), nil)
 
 		odb, err := NewBertyOrbitDB(ctx, ipfsNodeB.API(), &NewOrbitDBOptions{
 			NewOrbitDBOptions: orbitdb.NewOrbitDBOptions{

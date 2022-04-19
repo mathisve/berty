@@ -1,50 +1,31 @@
 import React, { useState } from 'react'
-import { View, TouchableOpacity, ScrollView, Share, StatusBar } from 'react-native'
-import { Layout, Text, Icon } from '@ui-kitten/components'
+import { View, TouchableOpacity, Share, StatusBar, Platform } from 'react-native'
+import { Layout, Icon } from '@ui-kitten/components'
 import QRCode from 'react-native-qrcode-svg'
-import { SafeAreaConsumer } from 'react-native-safe-area-context'
-
-import { useStyles } from '@berty-tech/styles'
-import { useNavigation } from '@berty-tech/navigation'
-import { useAccount } from '@berty-tech/store/hooks'
 import { useTranslation } from 'react-i18next'
+import Clipboard from '@react-native-clipboard/clipboard'
+
+import { useStyles } from '@berty/styles'
+import { useStylesBertyId, useThemeColor } from '@berty/store'
+import { ScreenFC } from '@berty/navigation'
+import { useAccount } from '@berty/hooks'
 
 import { TabBar } from '../shared-components/TabBar'
-import { RequestAvatar } from '../shared-components/Request'
 import { FingerprintContent } from '../shared-components/FingerprintContent'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
-import logo from '../main/1_berty_picto.png'
+import logo from '@berty/assets/images/1_berty_picto.png'
+import { AccountAvatar } from '../avatars'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 //
 // Settings My Berty ID Vue
 //
 
-// Styles
-
-const useStylesBertyId = () => {
-	const _iconIdSize = 45
-	const _iconShareSize = 26
-	const _titleSize = 26
-	const bertyIdContentScaleFactor = 0.66
-	const requestAvatarSize = 90
-
-	const [, { fontScale, scaleSize }] = useStyles()
-	const _bertyIdButtonSize = 60 * scaleSize
-	return {
-		bertyIdContentScaleFactor,
-		iconShareSize: _iconShareSize * scaleSize,
-		iconIdSize: _iconIdSize * scaleSize,
-		titleSize: _titleSize * fontScale,
-		requestAvatarSize,
-		styleBertyIdButton: {
-			width: _bertyIdButtonSize,
-			height: _bertyIdButtonSize,
-			borderRadius: _bertyIdButtonSize / 2,
-			marginRight: _bertyIdButtonSize,
-			bottom: _bertyIdButtonSize / 2,
-		},
-		styleBertyIdContent: { paddingBottom: _bertyIdButtonSize / 2 + 10 },
-	}
+const styleBertyIdOptions = {
+	iconIdSize: 45,
+	iconShareSize: 26,
+	titleSize: 26,
+	contentScaleFactor: 0.66,
+	avatarSize: 90,
 }
 
 const BertyIdContent: React.FC<{}> = ({ children }) => {
@@ -59,23 +40,24 @@ const BertyIdContent: React.FC<{}> = ({ children }) => {
 
 const ContactRequestQR = () => {
 	const account = useAccount()
-	const [{ padding }, { windowHeight, windowWidth, isGteIpadSize }] = useStyles()
-	const { titleSize, bertyIdContentScaleFactor } = useStylesBertyId()
+	const [{ padding }] = useStyles()
+	const colors = useThemeColor()
+	const { qrCodeSize } = useStylesBertyId(styleBertyIdOptions)
 
-	if (!account?.link) {
-		return <Text>Internal error</Text>
+	if (!account.link) {
+		return <UnifiedText>Internal error</UnifiedText>
 	}
-
-	// Make sure we can always see the whole QR code on the screen, even if need to scroll
-	const qrCodeSize = isGteIpadSize
-		? Math.min(windowHeight, windowWidth) * 0.5
-		: Math.min(windowHeight * bertyIdContentScaleFactor, windowWidth * bertyIdContentScaleFactor) -
-		  1.25 * titleSize
-
 	// I would like to use binary mode in QR but the scanner used seems to not support it, extended tests were done
 	return (
 		<View style={[padding.top.big]}>
-			<QRCode logo={logo} size={qrCodeSize} value={account.link} color='#3845E0' mode='circle' />
+			<QRCode
+				logo={logo}
+				size={qrCodeSize}
+				value={account.link}
+				color={colors['background-header']}
+				mode='circle'
+				backgroundColor={colors['main-background']}
+			/>
 		</View>
 	)
 }
@@ -83,10 +65,10 @@ const ContactRequestQR = () => {
 const Fingerprint: React.FC = () => {
 	const account = useAccount()
 	const [{ padding }, { windowHeight, windowWidth, isGteIpadSize }] = useStyles()
-	const { bertyIdContentScaleFactor } = useStylesBertyId()
+	const { bertyIdContentScaleFactor } = useStylesBertyId(styleBertyIdOptions)
 
 	if (!account) {
-		return <Text>Client not initialized</Text>
+		return <UnifiedText>Client not initialized</UnifiedText>
 	}
 	return (
 		<View
@@ -112,73 +94,78 @@ const SelectedContent: React.FC<{ contentName: string }> = ({ contentName }) => 
 		case 'fingerprint':
 			return <Fingerprint />
 		default:
-			return <Text>Error: Unknown content name "{contentName}"</Text>
+			return <UnifiedText>Error: Unknown content name "{contentName}"</UnifiedText>
 	}
 }
 
-const BertIdBody: React.FC<{ user: any }> = ({ user }) => {
-	const [{ background, border, margin, padding, opacity }] = useStyles()
-	const { styleBertyIdContent, requestAvatarSize } = useStylesBertyId()
+const BertIdBody: React.FC = () => {
+	const [{ border, margin, padding }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+
+	const { styleBertyIdContent, requestAvatarSize } = useStylesBertyId(styleBertyIdOptions)
 	const [selectedContent, setSelectedContent] = useState('qr')
-	const account = useAccount()
 	const { t } = useTranslation()
 
 	return (
-		<View
-			style={[
-				background.white,
-				border.radius.scale(30),
-				margin.horizontal.medium,
-				padding.top.large,
-				styleBertyIdContent,
-			]}
-		>
-			<RequestAvatar {...user} seed={account?.publicKey} size={requestAvatarSize} />
-			<View style={[padding.horizontal.big]}>
-				<TabBar
-					tabs={[
-						{ key: 'qr', name: t('settings.my-berty-ID.qr'), icon: 'qr', iconPack: 'custom' },
-						{
-							key: 'fingerprint',
-							name: t('settings.my-berty-ID.fingerprint'),
-							icon: 'fingerprint',
-							iconPack: 'custom',
-						},
-						{
-							key: 'devices',
-							name: t('settings.my-berty-ID.devices'),
-							icon: 'smartphone',
-							iconPack: 'feather',
-							iconTransform: [{ rotate: '22.5deg' }, { scale: 0.8 }],
-							buttonDisabled: true,
-							style: opacity(0.3),
-						},
-					]}
-					onTabChange={setSelectedContent}
-				/>
-				<BertyIdContent>
-					<SelectedContent contentName={selectedContent} />
-				</BertyIdContent>
+		<>
+			<View style={{ alignItems: 'center', top: 35 * scaleSize, zIndex: 10 }}>
+				<AccountAvatar size={requestAvatarSize} />
 			</View>
-		</View>
+			<View
+				style={[
+					border.radius.scale(30),
+					margin.horizontal.medium,
+					padding.top.large,
+					{ backgroundColor: colors['main-background'] },
+					styleBertyIdContent,
+				]}
+			>
+				<View style={[padding.horizontal.big]}>
+					<TabBar
+						tabs={[
+							{ key: 'qr', name: t('settings.my-berty-ID.qr'), icon: 'qr', iconPack: 'custom' },
+							{
+								key: 'fingerprint',
+								name: t('settings.my-berty-ID.fingerprint'),
+								icon: 'fingerprint',
+								iconPack: 'custom',
+							},
+						]}
+						onTabChange={setSelectedContent}
+					/>
+					<BertyIdContent>
+						<SelectedContent contentName={selectedContent} />
+					</BertyIdContent>
+				</View>
+			</View>
+		</>
 	)
 }
 
-const BertyIdShare: React.FC<{}> = () => {
-	const [{ row, border, background, flex, color }] = useStyles()
-	const { styleBertyIdButton, iconShareSize } = useStylesBertyId()
+const BertyIdShare: React.FC = () => {
+	const [{ row, border, flex }] = useStyles()
+	const colors = useThemeColor()
+	const { styleBertyIdButton, iconShareSize } = useStylesBertyId(styleBertyIdOptions)
 	const account = useAccount()
-	const url = account?.link
+	const url = account.link
 	if (!url) {
 		return null
 	}
 	return (
 		<TouchableOpacity
-			style={[row.item.bottom, background.light.blue, border.shadow.medium, styleBertyIdButton]}
+			style={[
+				row.item.bottom,
+				border.shadow.medium,
+				{ backgroundColor: colors['positive-asset'], shadowColor: colors.shadow },
+				styleBertyIdButton,
+			]}
 			onPress={async () => {
 				try {
-					console.log('sharing', url)
-					await Share.share({ url, message: url })
+					if (Platform.OS === 'web') {
+						Clipboard.setString(url)
+					} else {
+						await Share.share({ url, message: url })
+					}
 				} catch (e) {
 					console.error(e)
 				}
@@ -191,95 +178,32 @@ const BertyIdShare: React.FC<{}> = () => {
 					pack='custom'
 					width={iconShareSize}
 					height={iconShareSize}
-					fill={color.blue}
+					fill={colors['background-header']}
 				/>
 			</View>
 		</TouchableOpacity>
 	)
 }
 
-const MyBertyIdComponent: React.FC<{ user: any }> = ({ user }) => {
-	const { goBack } = useNavigation()
-	const [{ padding, color, margin, background, flex }, { windowHeight, scaleSize }] = useStyles()
-	const { titleSize, iconIdSize } = useStylesBertyId()
+const MyBertyIdComponent: React.FC = () => {
+	const [{ padding }] = useStyles()
+	const colors = useThemeColor()
 
 	return (
-		<SafeAreaConsumer>
-			{(insets) => {
-				return (
-					<ScrollView
-						bounces={false}
-						style={[
-							padding.medium,
-							background.blue,
-							{
-								paddingTop: scaleSize * ((insets?.top || 0) + 16),
-								flexGrow: 2,
-								flexBasis: '100%',
-							},
-						]}
-					>
-						<View
-							style={[
-								flex.direction.row,
-								flex.align.center,
-								flex.justify.spaceBetween,
-								{ marginBottom: windowHeight * 0.1 },
-							]}
-						>
-							<View style={[flex.direction.row, flex.align.center]}>
-								<TouchableOpacity
-									onPress={goBack}
-									style={{ alignItems: 'center', justifyContent: 'center' }}
-								>
-									<Icon name='arrow-down-outline' width={30} height={30} fill={color.white} />
-								</TouchableOpacity>
-								<Text
-									style={[
-										margin.left.scale(10),
-										{
-											fontWeight: '700',
-											fontSize: titleSize,
-											lineHeight: 1.25 * titleSize,
-											color: color.white,
-										},
-									]}
-								>
-									My Berty ID
-								</Text>
-							</View>
-							<Icon
-								name='id'
-								pack='custom'
-								width={iconIdSize}
-								height={iconIdSize}
-								fill={color.white}
-							/>
-						</View>
-						<BertIdBody user={user} />
-						<BertyIdShare />
-					</ScrollView>
-				)
-			}}
-		</SafeAreaConsumer>
+		<View style={[padding.medium, { backgroundColor: colors['background-header'] }]}>
+			<BertIdBody />
+			<BertyIdShare />
+		</View>
 	)
 }
 
-export const MyBertyId: React.FC<{ user: any }> = ({ user }) => {
-	const [{ flex }] = useStyles()
-	const navigation = useNavigation()
+export const MyBertyId: ScreenFC<'Settings.MyBertyId'> = () => {
+	const colors = useThemeColor()
 
 	return (
-		<Layout style={[flex.tiny, { backgroundColor: 'transparent' }]}>
-			<StatusBar backgroundColor='#585AF1' barStyle='light-content' />
-			<SwipeNavRecognizer
-				onSwipeUp={() => navigation.goBack()}
-				onSwipeDown={() => navigation.goBack()}
-				onSwipeLeft={() => navigation.goBack()}
-				onSwipeRight={() => navigation.goBack()}
-			>
-				<MyBertyIdComponent user={user} />
-			</SwipeNavRecognizer>
+		<Layout style={{ backgroundColor: colors['background-header'], flex: 1 }}>
+			<StatusBar backgroundColor={colors['background-header']} barStyle='light-content' />
+			<MyBertyIdComponent />
 		</Layout>
 	)
 }

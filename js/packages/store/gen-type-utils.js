@@ -1,4 +1,4 @@
-import pb from '@berty-tech/api/root.pb'
+import pb from '@berty/api/root.pb'
 
 const enumMapping = (name, enumType, prefix, resolvedPrefix = '') => {
 	const enumTypeParts = enumType.split('.')
@@ -17,7 +17,7 @@ const enumMapping = (name, enumType, prefix, resolvedPrefix = '') => {
 	console.log('never')
 }
 
-console.log("import beapi from '@berty-tech/api'")
+console.log("import beapi from '@berty/api'")
 
 enumMapping(
 	'StreamEventPayloadType',
@@ -47,11 +47,11 @@ Object.entries(pb.lookup('berty.messenger.v1.AppMessage.Type').values).forEach((
 	if (val === 0) {
 		console.log(`export type Interaction${key} =`)
 		console.log(`{ type: beapi.messenger.AppMessage.Type.${key},`)
-		console.log(`payload: undefined,`)
+		console.log(`payload?: undefined,`)
 	} else {
 		console.log(`export type Interaction${key.substr('Type'.length)} =`)
 		console.log(`{ type: beapi.messenger.AppMessage.Type.${key},`)
-		console.log(`payload: beapi.messenger.AppMessage.I${key.substr('Type'.length)},`)
+		console.log(`payload?: beapi.messenger.AppMessage.I${key.substr('Type'.length)},`)
 	}
 	console.log("} & Omit<beapi.messenger.IInteraction, 'payload' | 'type'>")
 })
@@ -68,7 +68,7 @@ Object.entries(pb.lookup('berty.messenger.v1.AppMessage.Type').values).forEach((
 const methodsHooks = (name, svcType, prefix) => {
 	const svc = pb.lookup(svcType)
 	console.log(`export type ${name} = {`)
-	Object.values(svc.methods).forEach((method) => {
+	Object.values(svc.methods).forEach(method => {
 		if (method.requestStream || method.responseStream) return
 		console.log(`use${method.name}: () => {
 			error: any
@@ -76,6 +76,7 @@ const methodsHooks = (name, svcType, prefix) => {
 			reply: ${prefix}.${method.name}.IReply | null
 			done: boolean
 			called: boolean
+			loading: boolean
 		},`)
 	})
 	console.log('}')

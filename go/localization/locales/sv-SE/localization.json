@@ -1,0 +1,66 @@
+{
+  "auth": {
+    "services": {
+      "rpl": {
+        "name": "",
+        "description": "",
+        "benefitBadge": "Prestanda"
+      },
+      "psh": {
+        "name": "Push-aviseringar",
+        "description": "",
+        "benefitBadge": "Prestanda"
+      }
+    },
+    "pageTitle": "",
+    "connectButton_one": "",
+    "connectButton_other": "",
+    "privacyPolicyLabel": "Integritetspolicy"
+  },
+  "push": {
+    "message": {},
+    "error": {
+      "title": ""
+    },
+    "voiceMessage": {
+      "bodyWithNumberOfMedia_one": "Skickade ett röstmeddelande",
+      "bodyWithNumberOfMedia_other": "Skickade %[1]v st röstmeddelanden"
+    },
+    "gif": {
+      "bodyWithNumberOfMedia_one": "Skickade en gif",
+      "bodyWithNumberOfMedia_other": "Skickade %[1]v st gifs"
+    },
+    "photo": {
+      "bodyWithNumberOfMedia_one": "Skickade ett foto",
+      "bodyWithNumberOfMedia_other": "Skickade %[1]v st foton"
+    },
+    "media": {
+      "bodyWithNumberOfMedia_one": "",
+      "bodyWithNumberOfMedia_other": ""
+    },
+    "reaction": {
+      "bodyWithDisplayNameAndEmoji": "%[1]v reagerade med %[2]v till ditt meddelande"
+    },
+    "groupInvitation": {
+      "bodyWithGroupName": ""
+    },
+    "unknown": {
+      "body": ""
+    },
+    "conversationNameChanged": {
+      "body": ""
+    },
+    "memberNameChanged": {
+      "body": ""
+    },
+    "memberPictureChanged": {
+      "body": ""
+    },
+    "memberDetailsChanged": {
+      "body": ""
+    },
+    "replyOptionsOffered": {
+      "body": ""
+    }
+  }
+}

@@ -5,7 +5,6 @@ import (
 )
 
 const (
-	NamespaceMessageKeystore  = "messages_keystore"
 	NamespaceDeviceKeystore   = "device_keystore"
 	NamespaceOrbitDBDatastore = "orbitdb_datastore"
 	NamespaceOrbitDBDirectory = "orbitdb"

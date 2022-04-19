@@ -1,4 +1,5 @@
-// +build ios
+//go:build ios && !catalyst
+// +build ios,!catalyst
 
 package username
 

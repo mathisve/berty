@@ -1,11 +1,12 @@
 import React from 'react'
-import { TouchableOpacity, View, Text } from 'react-native'
+import { TouchableOpacity, View } from 'react-native'
 
-import { useStyles } from '@berty-tech/styles'
+import { useStyles } from '@berty/styles'
 
 import { useStylesNotification, NotificationTmpLogo } from './common'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
-const Basic: React.FC<any> = ({ onClose, title, message }) => {
+const Basic: React.FC<any> = ({ onPress, onClose, title, message }) => {
 	const [{ text }] = useStyles()
 	const _styles = useStylesNotification()
 
@@ -13,22 +14,20 @@ const Basic: React.FC<any> = ({ onClose, title, message }) => {
 		<TouchableOpacity
 			style={_styles.touchable}
 			activeOpacity={0.3}
-			//underlayColor='transparent'
 			onPress={() => {
-				if (typeof onClose === 'function') {
-					onClose()
-				}
+				onClose()
+				onPress()
 			}}
 		>
 			<View style={_styles.innerTouchable}>
 				<NotificationTmpLogo />
 				<View style={_styles.titleAndTextWrapper}>
-					<Text numberOfLines={1} style={[text.color.black, text.bold.medium]}>
+					<UnifiedText numberOfLines={1} style={[text.bold]}>
 						{title}
-					</Text>
-					<Text numberOfLines={1} ellipsizeMode='tail' style={[text.color.black]}>
+					</UnifiedText>
+					<UnifiedText numberOfLines={1} ellipsizeMode='tail'>
 						{message}
-					</Text>
+					</UnifiedText>
 				</View>
 			</View>
 		</TouchableOpacity>

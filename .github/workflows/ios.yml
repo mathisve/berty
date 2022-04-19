@@ -6,110 +6,97 @@ on:
     branches:
       - master
     paths:
-      - 'go/**'
-      - '!go/**.md'
-      - 'go.*'
-      - '**.go'
-      - 'js/**'
-      - '.github/workflows/ios.yml'
+      - "go/**"
+      - "!go/**.md"
+      - "go.*"
+      - "**.go"
+      - "js/**"
+      - ".github/workflows/ios.yml"
   pull_request:
     paths:
-      - 'go/**'
-      - '!go/**.md'
-      - 'go.*'
-      - '**.go'
-      - 'js/**'
-      - '!js/packages/berty-i18n/locale/*/*.json'
-      - '.github/workflows/ios.yml'
+      - "go/**"
+      - "!go/**.md"
+      - "go.*"
+      - "**.go"
+      - "js/**"
+      - "!js/packages/i18n/locale/*/*.json"
+      - ".github/workflows/ios.yml"
 
 jobs:
-  sync-pods-lock:
-    name: Verify that Podfile.lock is up to date
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        golang: ['1.16.x']
-        xcode: ['12.0']
-        node: ['14.x']
+  mac_runner_matrix_builder:
+    name: macOS matrix builder
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}  # see https://github.com/actions/checkout/issues/299
-
-      - name: Setup XCode
-        uses: maxim-lobanov/setup-xcode@v1.2.3
-        with:
-          xcode-version: ${{ matrix.xcode }}
-
-      - name: Setup Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.golang }}
-
-      - name: Cache Node modules
-        uses: actions/cache@v2.1.5
-        with:
-          path: js/node_modules
-          key:          ${{ runner.OS }}-node-${{ matrix.node }}-v1-${{ hashFiles('js/yarn.lock') }}
-          restore-keys: ${{ runner.OS }}-node-${{ matrix.node }}-v1-
-
-      - name: Cache Ruby modules
-        uses: actions/cache@v2.1.5
-        with:
-          path: js/vendor/bundle
-          key:          ${{ runner.OS }}-bundle-${{ matrix.xcode }}-v1-${{ hashFiles('js/Gemfile.lock') }}
-          restore-keys: ${{ runner.OS }}-bundle-${{ matrix.xcode }}-v1-
-
-      - name: Cache XCodeGen
-        uses: actions/cache@v2.1.5
-        with:
-          path: js/vendor/xcodegen
-          key:          ios-xcodegen-${{ matrix.xcode }}-v1-${{ hashFiles('js/XcodeGen.version') }}
-          restore-keys: ios-xcodegen-${{ matrix.xcode }}-v1-
-
-      - name: Cache XCode project
-        uses: actions/cache@v2.1.5
-        with:
-          path: js/ios/Berty.xcodeproj
-          key:          ios-xcodeproj-${{ matrix.xcode }}-v1-${{ hashFiles('js/ios/*.yaml') }}
-          restore-keys: ios-xcodeproj-${{ matrix.xcode }}-v1-
-
-      - name: Build deps
-        working-directory: js
-        run: make node_modules ios/vendor/bundle ios/Berty.xcodeproj
-
-      - name: Sync Podfile.lock
-        working-directory: js/ios
-        run: bundle exec pod install --repo-update
-
-      - name: Check diff
+          fetch-depth: 1
+      - id: set-matrix
+        name: Generate dynamic build matrix (optimized)
         run: |
-          set -euo pipefail -o xtrace
-          if [[ $(git diff --text js/ios/Podfile.lock 2>&1 | tee /tmp/berty-podfile.diff) ]]; then cat /tmp/berty-podfile.diff && false; fi
+          # usage: node .github/workflows/mac-runner-matrix-builder.js STRATEGY
+          #
+          #  STRATEGY
+          #    random         pick a random runner configuration
+          #    dc4            pick the dc4 runner configuration
+          #    github         pick the github runner configuration
+          #    all            pick all the runner configurations (in parallel)
+          #    optimized      pick a dc4 runner if available or fallback on github one
+          #
+          node .github/workflows/utils/mac-runner-matrix-builder.js optimized "${{ secrets.SELFHOSTED_STATUS_CHECK_TOKEN }}"
 
   build:
+    needs: mac_runner_matrix_builder
     name: Build for iOS
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
-      matrix:
-        golang: ['1.16.x']
-        xcode: ['12.0']
-        node: ['14.x']
+      fail-fast: false
+      matrix: ${{fromJson(needs.mac_runner_matrix_builder.outputs.matrix)}}
     steps:
+      - name: Pre-checkout cleanup
+        if: ${{ matrix.selfhosted }}
+        run: |
+          if [ -d js/ios/.gomobile-cache ]; then
+            mv js/ios/.gomobile-cache $RUNNER_TEMP/.gomobile-cache
+          fi
+
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}  # see https://github.com/actions/checkout/issues/299
+          ref: ${{ github.event.pull_request.head.sha }} # see https://github.com/actions/checkout/issues/299
+
+      - name: Load variables from file
+        uses: antifree/json-to-variables@v1.0.1
+        with:
+          filename: .github/workflows/utils/variables.json
+
+      - name: Post-checkout cleanup
+        if: ${{ matrix.selfhosted }}
+        run: |
+          if [ -d $RUNNER_TEMP/.gomobile-cache ]; then
+            mv $RUNNER_TEMP/.gomobile-cache js/ios/.gomobile-cache
+          fi
 
       - name: Setup XCode
-        uses: maxim-lobanov/setup-xcode@v1.2.3
+        if: ${{ !matrix.selfhosted }}
+        # disabled on self-hosted because it requires authentication
+        uses: maxim-lobanov/setup-xcode@v1.4.1
         with:
           xcode-version: ${{ matrix.xcode }}
+
+      # pinned by js/ios/.ruby-version
+      - uses: ruby/setup-ruby@v1
+        env:
+         # Needs to be set up for self-hosted runners, see:
+         # https://github.com/ruby/setup-ruby#using-self-hosted-runners
+         # Image used in runners: summerwind/actions-runner
+         ImageOS: macos11
+        with:
+          working-directory: js/ios
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
 
       - name: Setup Go
         uses: actions/setup-go@v2
@@ -117,78 +104,107 @@ jobs:
           go-version: ${{ matrix.golang }}
 
       - name: Setup Node
-        uses: actions/setup-node@v2.1.5
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
 
       - name: Cache Go modules
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v2.1.6
         with:
           path: ~/go/pkg/mod
-          key:          ${{ runner.os }}-go-${{ matrix.golang }}-v2-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-${{ matrix.golang }}-v2-
+          key: ${{ runner.os }}-go-${{ matrix.golang }}-${{ env.json_cache-version_go }}-${{ hashFiles('go/**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-${{ matrix.golang }}-${{ env.json_cache-version_go }}-
 
       - name: Cache Node modules
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v2.1.6
         with:
           path: js/node_modules
-          key:          ${{ runner.OS }}-node-${{ matrix.node }}-v1-${{ hashFiles('js/yarn.lock') }}
-          restore-keys: ${{ runner.OS }}-node-${{ matrix.node }}-v1-
+          key: ${{ runner.OS }}-node-${{ matrix.node }}-${{ env.json_cache-version_node }}-${{ hashFiles('js/yarn.lock') }}
+          restore-keys: ${{ runner.OS }}-node-${{ matrix.node }}-${{ env.json_cache-version_node }}-
 
-      - name: Cache Ruby modules
-        uses: actions/cache@v2.1.5
+      - name: Cache Bertybridge framework
+        uses: n0izn0iz/mkache@5cedaeaf0b39a9220ae5a815cac8d2a924cee3ef
+        if: github.ref != 'refs/heads/master' # this makes sure the VCS_REF is correct on master
         with:
-          path: js/vendor/bundle
-          key:          ${{ runner.OS }}-bundle-v1-${{ hashFiles('js/Gemfile.lock') }}
-          restore-keys: ${{ runner.OS }}-bundle-v1-
+          rule: ios/Frameworks/Bertybridge.xcframework
+          makefile: js/Makefile
+          key: ios-gomobile-bridge-${{ matrix.golang }}
 
-      - name: Cache Gomobile .framework
-        uses: actions/cache@v2.1.5
+      - name: Cache Bertypush framework
+        uses: n0izn0iz/mkache@5cedaeaf0b39a9220ae5a815cac8d2a924cee3ef
+        if: github.ref != 'refs/heads/master' # this makes sure the VCS_REF is correct on master
         with:
-          path: js/ios/Frameworks/Bertybridge.framework
-          key:          ios-gomobile-${{ matrix.golang }}-v1-${{ hashFiles('go/**/*.go', 'go/**/*.m', 'go/**/*.h', 'go.sum') }}
-          restore-keys: ios-gomobile-${{ matrix.golang }}-v1-
+          rule: ios/Frameworks/Bertypush.xcframework
+          makefile: js/Makefile
+          key: ios-gomobile-push-${{ matrix.golang }}
+
+      - name: Build Gomobile frameworks
+        working-directory: js
+        run: make ios.gomobile
 
       - name: Cache XCodeGen
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v2.1.6
         with:
           path: js/vendor/xcodegen
-          key:          ios-xcodegen-${{ matrix.xcode }}-v1-${{ hashFiles('js/XcodeGen.version') }}
-          restore-keys: ios-xcodegen-${{ matrix.xcode }}-v1-
+          key: ios-xcodegen-${{ matrix.xcode }}-${{ env.json_cache-version_xcodegen }}-${{ hashFiles('js/XcodeGen.version') }}
+          restore-keys: ios-xcodegen-${{ matrix.xcode }}-${{ env.json_cache-version_xcodegen }}-
 
       - name: Cache XCode project
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v2.1.6
         with:
           path: js/ios/Berty.xcodeproj
-          key:          ios-xcodeproj-${{ matrix.xcode }}-v1-${{ hashFiles('js/ios/*.yaml') }}
-          restore-keys: ios-xcodeproj-${{ matrix.xcode }}-v1-
+          key: ios-xcodeproj-${{ matrix.xcode }}-${{ env.json_cache-version_xcodeproj }}-${{ hashFiles('js/ios/*.yaml') }}
+          restore-keys: ios-xcodeproj-${{ matrix.xcode }}-${{ env.json_cache-version_xcodeproj }}-
 
       - name: Cache Pods and XCode workspace
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v2.1.6
         with:
           path: |
             js/ios/Berty.xcworkspace
             js/ios/Pods
-          key:          ios-xcodeworkspace-${{ matrix.xcode }}-v1-${{ hashFiles('js/ios/Podfile.lock', 'js/yarn.lock') }}
-          restore-keys: ios-xcodeworkspace-${{ matrix.xcode }}-v1-
+          key: ios-xcodeworkspace-${{ matrix.xcode }}-${{ env.json_cache-version_xcodeworkspace }}-${{ hashFiles('js/ios/Podfile.lock', 'js/yarn.lock') }}
+          restore-keys: ios-xcodeworkspace-${{ matrix.xcode }}-${{ env.json_cache-version_xcodeworkspace }}-
 
       - name: Setup macOS keychain
         working-directory: tool/build/dummy-identity
         run: |
-          security create-keychain -p "dummypass" dummy.keychain
-          security default-keychain -s dummy.keychain
-          security unlock-keychain -p "dummypass" dummy.keychain
-          security set-keychain-settings dummy.keychain
-          security import berty-dummy.p12 -t priv -f pkcs12 -P "dummypass" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "dummypass" dummy.keychain
+          set -x
+          KEYCHAIN_PATH=$RUNNER_TEMP/dummy.keychain
 
-      - name: Build .env
-        run: cat tool/build/shakebugs-infos/env.prod >> js/.env
+          security create-keychain -p "dummypass" $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
+          security unlock-keychain -p "dummypass" $KEYCHAIN_PATH
+          security set-keychain-settings $KEYCHAIN_PATH
+          security import berty-dummy.p12 -t priv -f pkcs12 -P "dummypass" -T /usr/bin/codesign -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "dummypass" $KEYCHAIN_PATH
+
+      - name: Install Yarn
+        run: npm install -g yarn
+
+      - name: Install iOS app deps (node_modules)
+        working-directory: js
+        run: make node_modules
+
+      - name: Install iOS app deps (XCode Workspace)
+        working-directory: js
+        run: make ios.project
+
+      - name: Check Podfile.lock diff
+        run: |
+          DIFF=$(git diff --text js/ios/Podfile.lock 2>&1)
+          if [ -n "$DIFF" ]; then echo "$DIFF" && exit 1; fi
+
+      - name: Install iOS app deps (gomobile)
+        working-directory: js
+        run: make ios.gomobile
+
+      - name: Install iOS app deps (other)
+        working-directory: js
+        run: make ios.app_deps
 
       - name: Build the Archive
         working-directory: js
         run: |
-          make ios.app_deps
           xcodebuild archive \
                 CODE_SIGN_IDENTITY="" \
                 CODE_SIGNING_ALLOWED=NO \
@@ -197,13 +213,23 @@ jobs:
                 -workspace ios/Berty.xcworkspace \
                 -scheme "Berty Yolo" \
                 -sdk iphoneos \
-                -archivePath /tmp/Berty.xcarchive
-          for lib in /tmp/Berty.xcarchive/Products/Applications/Berty\ Yolo.app/Frameworks/*.dylib; do
-            lipo -remove armv7 -remove armv7s "$lib" -output "$lib"
+                -archivePath $RUNNER_TEMP/Berty.xcarchive
+
+      - name: Strip and sign the Archive
+        working-directory: js
+        run: |
+          APP_PATH="$RUNNER_TEMP/Berty.xcarchive/Products/Applications/Berty Yolo.app"
+          find "$APP_PATH" -type f | while read FILE; do
+            if [ -z "$(file "$FILE" | grep Mach-O)" ]; then continue; fi
+            for ARCH in $(lipo -archs "$FILE" 2> /dev/null); do
+              if [[ ! "$ARCH" =~ ^arm64e?$ ]]; then
+                lipo -remove "$ARCH" "$FILE" -output "$FILE"
+              fi
+            done
           done
-          codesign -fs "Berty Dummy" /tmp/Berty.xcarchive/Products/Applications/Berty\ Yolo.app
+          codesign -fs "Berty Dummy" "$APP_PATH"
           mkdir Payload
-          mv /tmp/Berty.xcarchive/Products/Applications/Berty\ Yolo.app Payload/
+          mv "$APP_PATH" Payload/
           zip -r ${{ github.workspace }}/Berty\ Yolo.dummy-signed-ipa Payload
 
       - name: Upload the Archive

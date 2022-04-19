@@ -8,41 +8,68 @@ import {
 	Image,
 	Dimensions,
 	Linking,
+	Share,
+	Platform,
 } from 'react-native'
-import { useStyles } from '@berty-tech/styles'
-import { Text, Icon } from '@ui-kitten/components'
-import { useNavigation } from '@berty-tech/navigation'
+import { Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
-import beapi from '@berty-tech/api'
-import { useMsgrContext, useConvInteractions, useClient } from '@berty-tech/store/hooks'
-import { getSource } from '@berty-tech/components/utils'
-import RNFS from 'react-native-fs'
-import { timeFormat } from '@berty-tech/components/helpers'
-const initialLayout = { width: Dimensions.get('window').width }
 import { TabView, SceneMap } from 'react-native-tab-view'
 import tlds from 'tlds'
-import linkifyFn from 'linkify-it'
+import LinkifyIt from 'linkify-it'
 import Hyperlink from 'react-native-hyperlink'
+import Clipboard from '@react-native-clipboard/clipboard'
 
-import { isBertyDeepLink } from '@berty-tech/components/chat/message/UserMessageComponents'
+import beapi from '@berty/api'
+import { useStyles } from '@berty/styles'
+import { ScreenFC } from '@berty/navigation'
+import {
+	useMessengerClient,
+	useThemeColor,
+	pbDateToNum,
+	retrieveMediaBytes,
+	Maybe,
+} from '@berty/store'
+import { useConversationInteractions } from '@berty/hooks'
+import RNFS from 'react-native-fs'
 
-const linkify = linkifyFn().tlds(tlds, true)
+import { getSource } from '../utils'
+import { timeFormat } from '../helpers'
+import { isBertyDeepLink } from '../chat/message/UserMessageComponents'
+import { useSelector } from 'react-redux'
+import { selectProtocolClient } from '@berty/redux/reducers/ui.reducer'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
-export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> = ({
+const initialLayout = { width: Dimensions.get('window').width }
+const linkify = LinkifyIt().tlds(tlds, true)
+
+const iconInfoFromMimeType = (mimeType: Maybe<string>): { name: string; pack?: string } => {
+	if (mimeType) {
+		if (mimeType.startsWith('audio')) {
+			return { name: 'headphones' }
+		}
+		if (mimeType.startsWith('image')) {
+			return { name: 'image' }
+		}
+	}
+	return { name: 'file' }
+}
+
+export const SharedMedias: ScreenFC<'Chat.SharedMedias'> = ({
 	route: {
 		params: { convPk },
 	},
+	navigation: { navigate },
 }) => {
-	const [{ flex, margin, row, text, padding, border, background, color }] = useStyles()
-	const { goBack, navigate } = useNavigation()
+	const [{ flex, margin, text, padding, border }] = useStyles()
+	const colors = useThemeColor()
 	const { t }: { t: any } = useTranslation()
 	const [activeIndex, setActiveIndex] = useState(0)
-	const { protocolClient } = useMsgrContext()
+	const protocolClient = useSelector(selectProtocolClient)
 	const [images, setImages] = useState<any[]>([])
-	const client = useClient()
+	const client = useMessengerClient()
 
-	const messages = useConvInteractions(convPk).filter(
-		(msg) =>
+	const messages = useConversationInteractions(convPk).filter(
+		msg =>
 			msg.type === beapi.messenger.AppMessage.Type.TypeUserMessage ||
 			msg.type === beapi.messenger.AppMessage.Type.TypeGroupInvitation ||
 			msg.type === beapi.messenger.AppMessage.Type.TypeMonitorMetadata,
@@ -51,30 +78,45 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 	const pictures = React.useMemo(() => {
 		return messages
 			.reverse()
-			.filter((inte) => inte?.medias?.[0]?.mimeType?.startsWith('image'))
-			.reduce((arr, current) => [...arr, ...current.medias], [])
+			.filter(inte => inte?.medias?.[0]?.mimeType?.startsWith('image'))
+			.reduce((arr, current) => [...arr, ...(current.medias || [])], [] as beapi.messenger.IMedia[])
 	}, [messages])
 
 	const documents = React.useMemo(() => {
 		return messages
 			.reverse()
-			.filter((inte) => inte?.medias?.[0] && !inte.medias?.[0].mimeType?.startsWith('image'))
-			.reduce((arr, current) => [...arr, { ...current.medias[0], sentDate: current.sentDate }], [])
+			.filter(inte => inte?.medias?.[0] && !inte.medias?.[0].mimeType?.startsWith('image'))
+			.reduce((arr, current) => {
+				if (!current.medias?.length) {
+					return arr
+				}
+				return [
+					...arr,
+					{ ...current.medias[0], sentDate: current.sentDate as unknown as number | Date },
+				]
+			}, [] as (beapi.messenger.IMedia & { sentDate: number | Date })[])
 	}, [messages])
 
-	const links: { url: string; sentDate: number }[] = React.useMemo(() => {
+	const links = React.useMemo(() => {
 		return messages
 			.reverse()
-			.filter((inte) => inte?.payload?.body && linkify.test(inte.payload.body))
-			.reduce(
-				(arr, current) => [
-					...arr,
-					...linkify
-						.match(current.payload.body)
-						.map((item) => ({ url: item.url, sentDate: current.sentDate })),
-				],
-				[],
+			.filter(
+				inte =>
+					inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage &&
+					linkify.test(inte.payload?.body || ''),
 			)
+			.reduce((arr, current) => {
+				if (current?.type !== beapi.messenger.AppMessage.Type.TypeUserMessage) {
+					return arr
+				}
+				return [
+					...arr,
+					...(linkify.match(current.payload?.body || '') as { url: string }[]).map(item => ({
+						url: item.url,
+						sentDate: pbDateToNum(current.sentDate),
+					})),
+				]
+			}, [] as { url: string; sentDate: number }[])
 	}, [messages])
 
 	useEffect(() => {
@@ -83,12 +125,13 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 		}
 
 		Promise.all(
-			pictures.map((media: any) => {
-				return getSource(protocolClient, media.cid)
-					.then((src) => {
-						return { ...media, uri: `data:${media.mimeType};base64,${src}` }
-					})
-					.catch((e) => console.error('failed to get picture message image:', e))
+			pictures.map(async (media: any) => {
+				try {
+					const src = await getSource(protocolClient, media.cid)
+					return { ...media, uri: `data:${media.mimeType};base64,${src}` }
+				} catch (e) {
+					return console.error('failed to get picture message image:', e)
+				}
 			}),
 		).then((images: any) => setImages(images.filter(Boolean)))
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,9 +164,9 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 	const mediaView = () => (
 		<ScrollView contentContainerStyle={[padding.medium]}>
 			{!pictures.length && (
-				<Text style={[text.align.center, margin.left.small, text.size.scale(18)]}>
+				<UnifiedText style={[text.align.center, margin.left.small, text.size.scale(18)]}>
 					No records found
-				</Text>
+				</UnifiedText>
 			)}
 
 			<View
@@ -134,11 +177,11 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 					justifyContent: 'center',
 				}}
 			>
-				{images.map((image) => (
+				{images.map(image => (
 					<TouchableOpacity
 						key={image.cid}
 						onPress={() => {
-							navigate.modals.imageView({ images: [image] })
+							navigate('Modals.ImageView', { images: [image] })
 						}}
 						activeOpacity={0.9}
 					>
@@ -165,13 +208,13 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 	const documentsView = () => (
 		<ScrollView contentContainerStyle={[padding.medium]}>
 			{!documents.length && (
-				<Text style={[text.align.center, margin.left.small, text.size.scale(18)]}>
+				<UnifiedText style={[text.align.center, margin.left.small, text.size.scale(18)]}>
 					No records found
-				</Text>
+				</UnifiedText>
 			)}
 
 			<View style={{}}>
-				{documents.map((doc) => (
+				{documents.map(doc => (
 					<View
 						key={doc.cid}
 						style={{
@@ -186,24 +229,47 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 								alignItems: 'center',
 							}}
 							onPress={async () => {
-								const source = await getSource(protocolClient, doc.cid)
-								RNFS.writeFile(`${RNFS.DocumentDirectoryPath}/${doc.filename}`, source, 'base64')
-									.then(() => {})
-									.catch((err) => console.log(err))
+								if (!client || !doc.cid) {
+									return
+								}
+								const { data } = await retrieveMediaBytes(client, doc.cid)
+								const tmpFilename = RNFS.TemporaryDirectoryPath + '/' + (doc.filename || 'document')
+								try {
+									console.log('will share', data.length / 1000 / 1000, 'MB')
+									await RNFS.writeFile(tmpFilename, data.toString('base64'), 'base64')
+									const url = 'file://' + tmpFilename
+									if (Platform.OS === 'web') {
+										Clipboard.setString(url)
+									} else {
+										await Share.share({ url, message: url })
+									}
+								} catch (err: any) {
+									if (!(typeof err?.message === 'string' && err.message.contains('cancelled'))) {
+										console.warn('failed to write shareable file: ', err)
+									}
+								}
+								try {
+									await RNFS.unlink(tmpFilename)
+								} catch (err) {
+									console.warn('failed to unlink shareable file: ', err)
+								}
 							}}
 						>
-							<Icon name='file' height={20} width={20} fill='#939FB6' />
-							<Text
-								style={{
-									fontStyle: 'italic',
-									textDecorationLine: 'underline',
-								}}
-							>
-								{doc.filename}
-							</Text>
+							<Icon
+								{...iconInfoFromMimeType(doc.mimeType)}
+								height={20}
+								width={20}
+								fill={colors['secondary-text']}
+								style={margin.right.small}
+							/>
+							<UnifiedText style={[text.italic, { textDecorationLine: 'underline' }]}>
+								{doc.displayName || doc.filename || 'document'}
+							</UnifiedText>
 						</TouchableOpacity>
 
-						<Text style={{ fontSize: 12 }}>{timeFormat.fmtTimestamp3(doc.sentDate)}</Text>
+						<UnifiedText style={[text.size.small]}>
+							{timeFormat.fmtTimestamp3(doc.sentDate)}
+						</UnifiedText>
 					</View>
 				))}
 			</View>
@@ -213,9 +279,9 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 	const linksView = () => (
 		<ScrollView contentContainerStyle={[padding.medium]}>
 			{!links.length && (
-				<Text style={[text.align.center, margin.left.small, text.size.scale(18)]}>
+				<UnifiedText style={[text.align.center, margin.left.small, text.size.scale(18)]}>
 					No records found
-				</Text>
+				</UnifiedText>
 			)}
 
 			<View style={{}}>
@@ -228,27 +294,28 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 						}}
 					>
 						<Hyperlink
-							onPress={async (url) => {
+							onPress={async url => {
 								if (client && (await isBertyDeepLink(client, url))) {
-									navigate.modals.manageDeepLink({ type: 'link', value: url })
-
+									navigate('Modals.ManageDeepLink', { type: 'link', value: url })
 									return
 								}
-								Linking.canOpenURL(url).then((supported) => supported && Linking.openURL(url))
+								Linking.canOpenURL(url).then(supported => supported && Linking.openURL(url))
 							}}
 							linkStyle={{ textDecorationLine: 'underline' }}
 							linkify={linkify}
 						>
-							<Text
+							<UnifiedText
 								style={{
-									color: color.blue,
+									color: colors['background-header'],
 								}}
 							>
 								{url}
-							</Text>
+							</UnifiedText>
 						</Hyperlink>
 
-						<Text style={{ fontSize: 12, marginTop: 8 }}>{timeFormat.fmtTimestamp3(sentDate)}</Text>
+						<UnifiedText style={[text.size.small, { marginTop: 8 }]}>
+							{timeFormat.fmtTimestamp3(sentDate)}
+						</UnifiedText>
 					</View>
 				))}
 			</View>
@@ -268,28 +335,13 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 	})
 
 	return (
-		<View style={[flex.tiny, background.white]}>
-			<StatusBar barStyle='light-content' backgroundColor={color.blue} />
-			<SafeAreaView style={[{ backgroundColor: color.blue }]}>
-				<View style={[padding.horizontal.medium, padding.top.tiny, margin.bottom.big]}>
-					<View style={[row.fill, { justifyContent: 'center', alignItems: 'center' }]}>
-						<TouchableOpacity style={[flex.tiny]} onPress={() => goBack()}>
-							<Icon name='arrow-back-outline' width={25} height={25} fill='white' />
-						</TouchableOpacity>
-						<View style={[flex.big]}>
-							<Text
-								style={[text.align.center, text.color.white, text.bold.medium, text.size.scale(25)]}
-							>
-								{t('chat.shared-medias.title')}
-							</Text>
-						</View>
-						<View style={[flex.tiny, row.item.justify]} />
-					</View>
-				</View>
-
-				<View style={[{ flexDirection: 'row', alignItems: 'flex-end' }]}>
+		<View style={[flex.tiny, { backgroundColor: colors['main-background'] }]}>
+			<StatusBar barStyle='light-content' backgroundColor={colors['background-header']} />
+			<SafeAreaView style={[{ backgroundColor: colors['background-header'] }]}>
+				<View style={[{ flexDirection: 'row', alignItems: 'flex-end' }, padding.top.large]}>
 					{tabs.map((tab, index) => (
 						<TouchableOpacity
+							key={index}
 							activeOpacity={0.9}
 							onPress={() => setActiveIndex(index)}
 							style={[
@@ -298,29 +350,29 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 								padding.bottom.big,
 								border.radius.top.small,
 								margin.right.small,
-
 								{
 									flexDirection: 'row',
 									alignItems: 'center',
-									backgroundColor: activeIndex === index ? 'white' : '#D9D7FF',
+									backgroundColor:
+										activeIndex === index ? colors['main-background'] : colors['input-background'],
 								},
 							]}
 						>
 							<Icon
 								height={activeIndex === index ? 30 : 25}
 								width={activeIndex === index ? 30 : 25}
-								fill={color.blue}
+								fill={colors['background-header']}
 								{...tab.icon}
 							/>
-							<Text
+							<UnifiedText
 								style={[
-									text.color.blue,
 									margin.left.small,
 									text.size.scale(activeIndex === index ? 17 : 16),
+									{ color: colors['background-header'] },
 								]}
 							>
 								{tab.title}
-							</Text>
+							</UnifiedText>
 						</TouchableOpacity>
 					))}
 				</View>
@@ -336,7 +388,7 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 					<Icon
 						height={200}
 						width={200}
-						fill='#4C54E7'
+						fill={colors['background-header']}
 						name={tabs[activeIndex].icon.name}
 						pack='feather'
 					/>
@@ -349,7 +401,7 @@ export const SharedMedias: React.FC<{ route: { params: { convPk: string } } }> =
 					flex.tiny,
 					{
 						marginTop: -20,
-						backgroundColor: 'white',
+						backgroundColor: colors['main-background'],
 					},
 				]}
 			>

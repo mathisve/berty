@@ -1,13 +1,15 @@
 import React from 'react'
-import { TouchableOpacity, View, Text } from 'react-native'
+import { TouchableOpacity, View } from 'react-native'
+import { CommonActions } from '@react-navigation/native'
 
-import beapi from '@berty-tech/api'
-import { useStyles } from '@berty-tech/styles'
-import { useConversation } from '@berty-tech/store/hooks'
-import { navigate, Routes } from '@berty-tech/navigation'
+import beapi from '@berty/api'
+import { useStyles } from '@berty/styles'
+import { dispatch } from '@berty/navigation'
+import { useConversation } from '@berty/hooks'
 
 import { useStylesNotification } from './common'
 import { ConversationAvatar } from '../avatars'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const MessageReceived: React.FC<any> = ({ onClose, title, message, ...props }) => {
 	const [{ text }] = useStyles()
@@ -21,11 +23,22 @@ const MessageReceived: React.FC<any> = ({ onClose, title, message, ...props }) =
 	const handlePressConvMessage = () => {
 		if (convExists && inteExists) {
 			// TODO: Investigate: doesn't work if app crashes and is restarted
-			navigate(
-				payload.conversation.type === beapi.messenger.Conversation.Type.ContactType
-					? Routes.Chat.OneToOne
-					: Routes.Chat.Group,
-				{ convId: payload.conversation?.publicKey, scrollToMessage: payload?.interaction?.cid },
+			dispatch(
+				CommonActions.reset({
+					routes: [
+						{ name: 'Main.Home' },
+						{
+							name:
+								payload.conversation.type === beapi.messenger.Conversation.Type.ContactType
+									? 'Chat.OneToOne'
+									: 'Chat.Group',
+							params: {
+								convId: payload.conversation?.publicKey,
+								scrollToMessage: payload?.interaction?.cid,
+							},
+						},
+					],
+				}),
 			)
 		} else {
 			console.warn('Notif: Conversation or interaction not found')
@@ -45,12 +58,12 @@ const MessageReceived: React.FC<any> = ({ onClose, title, message, ...props }) =
 			<View style={_styles.innerTouchable}>
 				<ConversationAvatar publicKey={payload.conversation?.publicKey} size={40} />
 				<View style={_styles.titleAndTextWrapper}>
-					<Text numberOfLines={1} style={[text.color.black, text.bold.medium]}>
+					<UnifiedText numberOfLines={1} style={[text.bold]}>
 						{title}
-					</Text>
-					<Text numberOfLines={1} ellipsizeMode='tail' style={[text.color.black]}>
+					</UnifiedText>
+					<UnifiedText numberOfLines={1} ellipsizeMode='tail'>
 						{message}
-					</Text>
+					</UnifiedText>
 				</View>
 			</View>
 		</TouchableOpacity>

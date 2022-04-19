@@ -1,19 +1,20 @@
 package tech.berty.gobridge.bledriver;
 
-import android.util.Log;
-
 import java.util.ArrayList;
-import java.util.HashMap;
 
 public class Peer {
     private static final String TAG = "bty.ble.Peer";
+    private final Logger mLogger;
 
-    private String mPeerID;
+    private static final long TIMEOUT = 30000;
+    private final String mPeerID;
+    private final ArrayList<PeerDevice> mClientDevices = new ArrayList<>();
+    private final ArrayList<PeerDevice> mServerDevices = new ArrayList<>();
 
-    private ArrayList<PeerDevice> mClientDevices = new ArrayList<>();
-    private ArrayList<PeerDevice> mServerDevices = new ArrayList<>();
+    private Runnable mTimeoutRunnable;
 
-    public Peer(String peerID) {
+    public Peer(Logger logger, String peerID) {
+        mLogger = logger;
         mPeerID = peerID;
     }
 
@@ -29,15 +30,10 @@ public class Peer {
         mServerDevices.add(peerDevice);
     }
 
-    public synchronized void disconnectAndRemoveDevices() {
-        for (PeerDevice device : mClientDevices) {
-            device.disconnect();
-        }
-        mClientDevices.clear();
+    public synchronized void removeDevices() {
+        mLogger.d(TAG, String.format("removeDevices called: pid=%s", mLogger.sensitiveObject(mPeerID)));
 
-        for (PeerDevice device : mServerDevices) {
-            device.disconnect();
-        }
+        mClientDevices.clear();
         mServerDevices.clear();
     }
 
@@ -48,15 +44,32 @@ public class Peer {
         return null;
     }
 
-    public synchronized  boolean isClientReady() {
+    public synchronized PeerDevice getPeerServerDevice() {
+        if (mServerDevices.size() > 0) {
+            return mServerDevices.get(0);
+        }
+        return null;
+    }
+
+    public synchronized PeerDevice getDevice() {
+        if (mClientDevices.size() > 0) {
+            return mClientDevices.get(0);
+        } else if (mServerDevices.size() > 0) {
+            return mServerDevices.get(0);
+        }
+
+        return null;
+    }
+
+    public synchronized boolean isClientReady() {
         return mClientDevices.size() > 0;
     }
 
-    public synchronized  boolean isServerReady() {
+    public synchronized boolean isServerReady() {
         return mServerDevices.size() > 0;
     }
 
     public synchronized boolean isHandshakeSuccessful() {
-        return isClientReady() && isServerReady();
+        return isClientReady() || isServerReady();
     }
 }

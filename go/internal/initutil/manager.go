@@ -10,11 +10,11 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-ipfs/core"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	p2p_mdns "github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shibukawa/configdir"
@@ -24,17 +24,21 @@ import (
 	"moul.io/progress"
 	"moul.io/zapring"
 
+	"berty.tech/berty/v2/go/internal/accountutils"
 	"berty.tech/berty/v2/go/internal/grpcutil"
 	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/internal/lifecycle"
+	"berty.tech/berty/v2/go/internal/logutil"
 	"berty.tech/berty/v2/go/internal/notification"
 	proximity "berty.tech/berty/v2/go/internal/proximitytransport"
+	"berty.tech/berty/v2/go/internal/rendezvous"
 	"berty.tech/berty/v2/go/internal/tinder"
 	"berty.tech/berty/v2/go/pkg/bertymessenger"
 	"berty.tech/berty/v2/go/pkg/bertyprotocol"
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/messengertypes"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
+	"berty.tech/berty/v2/go/pkg/tyber"
 )
 
 const (
@@ -43,14 +47,31 @@ const (
 )
 
 type Manager struct {
+	// Session contains metadata for the current running session.
+	Session struct {
+		// Kind is a string describing the context of the app.
+		// When set, it is appended to the session-specific logging file.
+		// It follows the following format: '${driver}.${package}.${command}'.
+		// Examples:
+		//   cli.daemon       -> `go run ./cmd/berty daemon`
+		//   cli.mini         -> `go run ./cmd/berty mini`
+		//   cli.rdvp         -> `go run ./cmd/rdvp`
+		//   mobile.messenger -> Berty Messenger app using the bertybridge
+		Kind string `json:"Kind,omitempty"`
+
+		// ID is an auto-generated UUID that can be used by Tyber.
+		ID string `json:"ID,omitempty"`
+	} `json:"Session,omitempty"`
 	Logging struct {
-		Format      string `json:"Format,omitempty"`
-		Logfile     string `json:"Logfile,omitempty"`
-		Filters     string `json:"Filters,omitempty"`
-		Tracer      string `json:"Tracer,omitempty"`
-		Service     string `json:"Service,omitempty"`
-		RingFilters string `json:"RingFilters,omitempty"`
-		RingSize    uint   `json:"RingSize,omitempty"`
+		DisableLogging bool
+
+		DefaultLoggerStreams []logutil.Stream
+		StderrFormat         string `json:"StderrFormat,omitempty"`
+		StderrFilters        string `json:"StderrFilters,omitempty"`
+		FilePath             string `json:"FilePath,omitempty"`
+		FileFilters          string `json:"FileFilters,omitempty"`
+		RingFilters          string `json:"RingFilters,omitempty"`
+		RingSize             uint   `json:"RingSize,omitempty"`
 
 		zapLogger *zap.Logger
 		cleanup   func()
@@ -63,9 +84,8 @@ type Manager struct {
 		registry *prometheus.Registry
 	} `json:"Metrics,omitempty"`
 	Datastore struct {
-		Dir              string `json:"Dir,omitempty"`
-		InMemory         bool   `json:"InMemory,omitempty"`
-		LowMemoryProfile bool   `json:"LowMemoryProfile,omitempty"`
+		Dir      string `json:"Dir,omitempty"`
+		InMemory bool   `json:"InMemory,omitempty"`
 
 		defaultDir string
 		dir        string
@@ -74,52 +94,66 @@ type Manager struct {
 	Node struct {
 		Preset   string `json:"preset"`
 		Protocol struct {
-			SwarmListeners    string `json:"SwarmListeners,omitempty"`
-			IPFSAPIListeners  string `json:"IPFSAPIListeners,omitempty"`
-			IPFSWebUIListener string `json:"IPFSWebUIListener,omitempty"`
-			Announce          string `json:"Announce,omitempty"`
-			Bootstrap         string `json:"Bootstrap,omitempty"`
-			DHT               string `json:"DHT,omitempty"`
-			DHTRandomWalk     bool   `json:"DHTRandomWalk,omitempty"`
-			NoAnnounce        string `json:"NoAnnounce,omitempty"`
-			MDNS              bool   `json:"LocalDiscovery,omitempty"`
-			TinderDHTDriver   bool   `json:"TinderDHTDriver,omitempty"`
-			TinderRDVPDriver  bool   `json:"TinderRDVPDriver,omitempty"`
-			StaticRelays      string `json:"StaticRelays,omitempty"`
-			Ble               struct {
-				Enable bool                   `json:"Enable,omitempty"`
-				Driver proximity.NativeDriver `json:"Driver,omitempty"`
-			}
+			SwarmListeners             string `json:"SwarmListeners,omitempty"`
+			IPFSAPIListeners           string `json:"IPFSAPIListeners,omitempty"`
+			IPFSWebUIListener          string `json:"IPFSWebUIListener,omitempty"`
+			Announce                   string `json:"Announce,omitempty"`
+			Bootstrap                  string `json:"Bootstrap,omitempty"`
+			DHT                        string `json:"DHT,omitempty"`
+			DHTRandomWalk              bool   `json:"DHTRandomWalk,omitempty"`
+			NoAnnounce                 string `json:"NoAnnounce,omitempty"`
+			TinderDiscover             bool   `json:"TinderDiscover,omitempty"`
+			TinderDHTDriver            bool   `json:"TinderDHTDriver,omitempty"`
+			TinderRDVPDriver           bool   `json:"TinderRDVPDriver,omitempty"`
+			TinderLocalDiscoveryDriver bool   `json:"TinderLocalDiscoveryDriver,omitempty"`
+			AutoRelay                  bool   `json:"Relay,omitempty"`
+			StaticRelays               string `json:"StaticRelays,omitempty"`
+			LowWatermark               int    `json:"LowWatermark,omitempty"`
+			HighWatermark              int    `json:"HighWatermark,omitempty"`
+			MDNS                       struct {
+				Enable       bool `json:"Enable,omitempty"`
+				DriverLocker sync.Locker
+				NetAddrs     ipfsutil.NetAddrs
+			} `json:"MDNS,omitempty"`
+			Ble struct {
+				Enable bool `json:"Enable,omitempty"`
+				Driver proximity.ProximityDriver
+			} `json:"Ble,omitempty"`
 			Nearby struct {
-				Enable bool                   `json:"Enable,omitempty"`
-				Driver proximity.NativeDriver `json:"Driver,omitempty"`
-			}
-			MultipeerConnectivity bool          `json:"MultipeerConnectivity,omitempty"`
-			MinBackoff            time.Duration `json:"MinBackoff,omitempty"`
-			MaxBackoff            time.Duration `json:"MaxBackoff,omitempty"`
-			DisableIPFSNetwork    bool          `json:"DisableIPFSNetwork,omitempty"`
-			RdvpMaddrs            string        `json:"RdvpMaddrs,omitempty"`
-			AuthSecret            string        `json:"AuthSecret,omitempty"`
-			AuthPublicKey         string        `json:"AuthPublicKey,omitempty"`
-			PollInterval          time.Duration `json:"PollInterval,omitempty"`
-			Tor                   struct {
-				Mode       string `json:"Mode,omitempty"`
-				BinaryPath string `json:"BinaryPath,omitempty"`
-			} `json:"Tor,omitempty"`
+				Enable bool `json:"Enable,omitempty"`
+				Driver proximity.ProximityDriver
+			} `json:"Nearby,omitempty"`
+			MultipeerConnectivity  bool          `json:"MultipeerConnectivity,omitempty"`
+			MinBackoff             time.Duration `json:"MinBackoff,omitempty"`
+			MaxBackoff             time.Duration `json:"MaxBackoff,omitempty"`
+			DisableIPFSNetwork     bool          `json:"DisableIPFSNetwork,omitempty"`
+			RdvpMaddrs             string        `json:"RdvpMaddrs,omitempty"`
+			AuthSecret             string        `json:"AuthSecret,omitempty"`
+			AuthPublicKey          string        `json:"AuthPublicKey,omitempty"`
+			PollInterval           time.Duration `json:"PollInterval,omitempty"`
+			PushPlatformToken      string        `json:"PushPlatformToken,omitempty"`
+			DevicePushKeyPath      string        `json:"DevicePushKeyPath,omitempty"`
+			ServiceInsecureMode    bool          `json:"ServiceInsecureMode,omitempty"`
+			RendezvousRotationBase time.Duration `json:"RendezvousRotationBase,omitempty"`
 
 			// internal
-			needAuth          bool
-			ipfsNode          *core.IpfsNode
-			ipfsAPI           ipfsutil.ExtendedCoreAPI
-			pubsub            *pubsub.PubSub
-			discovery         tinder.Service
-			server            bertyprotocol.Service
-			ipfsAPIListeners  []net.Listener
-			ipfsWebUIListener net.Listener
-			client            protocoltypes.ProtocolServiceClient
-			requiredByClient  bool
-			ipfsWebUICleanup  func()
-			orbitDB           *bertyprotocol.BertyOrbitDB
+			DisableDiscoverFilterAddrs bool
+			ServiceID                  string
+			needAuth                   bool
+			ipfsNode                   *core.IpfsNode
+			ipfsAPI                    ipfsutil.ExtendedCoreAPI
+			mdnsService                p2p_mdns.Service
+			localdisc                  *tinder.LocalDiscovery
+			pubsub                     *pubsub.PubSub
+			discovery                  tinder.Service
+			server                     bertyprotocol.Service
+			ipfsAPIListeners           []net.Listener
+			ipfsWebUIListener          net.Listener
+			client                     protocoltypes.ProtocolServiceClient
+			requiredByClient           bool
+			ipfsWebUICleanup           func()
+			orbitDB                    *bertyprotocol.BertyOrbitDB
+			rotationInterval           *rendezvous.RotationInterval
 		}
 		Messenger struct {
 			DisableGroupMonitor  bool   `json:"DisableGroupMonitor,omitempty"`
@@ -140,9 +174,14 @@ type Manager struct {
 			requiredByClient    bool
 			localDBState        *messengertypes.LocalDatabaseState
 		}
+		Replication struct {
+			db        *gorm.DB
+			dbCleanup func()
+		}
 		GRPC struct {
-			RemoteAddr string `json:"RemoteAddr,omitempty"`
-			Listeners  string `json:"Listeners,omitempty"`
+			RemoteAddr       string `json:"RemoteAddr,omitempty"`
+			Listeners        string `json:"Listeners,omitempty"`
+			AccountListeners string `json:"AccountListeners,omitempty"`
 
 			// internal
 			clientConn        *grpc.ClientConn
@@ -154,20 +193,41 @@ type Manager struct {
 		} `json:"GRPC,omitempty"`
 	} `json:"Node,omitempty"`
 	InitTimeout time.Duration `json:"InitTimeout,omitempty"`
-	SessionID   string        `json:"sessionID,omitempty"`
 
 	// internal
-	ctx        context.Context
-	ctxCancel  func()
-	initLogger *zap.Logger
-	workers    run.Group // replace by something more accurate
-	mutex      sync.Mutex
-	longHelp   [][2]string
+	ctx            context.Context
+	ctxCancel      func()
+	initLogger     *zap.Logger
+	workers        run.Group // replace by something more accurate
+	mutex          sync.Mutex
+	longHelp       [][2]string
+	nativeKeystore accountutils.NativeKeystore
+	accountID      string
 }
 
-func New(ctx context.Context) (*Manager, error) {
+type ManagerOpts struct {
+	DoNotSetDefaultDir   bool
+	DisableLogging       bool
+	DefaultLoggerStreams []logutil.Stream
+	NativeKeystore       accountutils.NativeKeystore
+	AccountID            string
+}
+
+func New(ctx context.Context, opts *ManagerOpts) (*Manager, error) {
+	if opts == nil {
+		opts = &ManagerOpts{}
+	}
+
 	m := Manager{}
 	m.ctx, m.ctxCancel = context.WithCancel(ctx)
+
+	m.accountID = opts.AccountID
+	if m.accountID == "" {
+		m.accountID = "0"
+	}
+
+	// explicitly disable logging
+	m.Logging.DisableLogging = opts.DisableLogging
 
 	// special default values:
 	// this is not the good place to put all the default values.
@@ -181,21 +241,21 @@ func New(ctx context.Context) (*Manager, error) {
 	// * values that are reused across various CLI depths.
 	//
 	// the good location for other variables is in the initutil.SetupFoo functions.
-	m.Logging.Filters = defaultLoggingFilters
+	m.Logging.DefaultLoggerStreams = opts.DefaultLoggerStreams
+	m.Logging.StderrFilters = defaultLoggingFilters
 	m.Logging.RingFilters = defaultLoggingFilters
-	m.Logging.Format = "color"
-	m.Logging.Service = "berty"
+	m.Logging.FileFilters = "*"
+	m.Logging.StderrFormat = "color"
 	m.Logging.RingSize = 10 // 10MB ring buffer
 
 	// generate SessionID using uuidv4 to identify each run
-	id, err := uuid.NewV4()
-	if err != nil {
-		return nil, errcode.TODO.Wrap(err)
-	}
-	m.SessionID = id.String()
+	m.Session.ID = tyber.NewSessionID()
+
+	// forward native keystore
+	m.nativeKeystore = opts.NativeKeystore
 
 	// storage path
-	{
+	if !opts.DoNotSetDefaultDir {
 		storagePath := configdir.New("berty-tech", "berty")
 		storageDirs := storagePath.QueryFolders(configdir.Global)
 		if len(storageDirs) == 0 {
@@ -260,8 +320,10 @@ func (m *Manager) Close(prog *progress.Progress) error {
 	prog.AddStep("close-messenger-server")
 	prog.AddStep("close-messenger-protocol-client")
 	prog.AddStep("cleanup-messenger-db")
+	prog.AddStep("cleanup-replication-db")
 	prog.AddStep("close-protocol-server")
 	prog.AddStep("close-tinder-service")
+	prog.AddStep("close-mdns-service")
 	prog.AddStep("close-ipfs-node")
 	prog.AddStep("close-datastore")
 	prog.AddStep("close-ring")
@@ -291,6 +353,9 @@ func (m *Manager) Close(prog *progress.Progress) error {
 	prog.Get("stop-grpc-server").SetAsCurrent()
 	if m.Node.GRPC.server != nil {
 		m.Node.GRPC.server.Stop()
+		for _, l := range m.Node.GRPC.listeners {
+			l.Close()
+		}
 	}
 
 	prog.Get("close-messenger-server").SetAsCurrent()
@@ -308,6 +373,11 @@ func (m *Manager) Close(prog *progress.Progress) error {
 		m.Node.Messenger.dbCleanup()
 	}
 
+	prog.Get("cleanup-replication-db").SetAsCurrent()
+	if m.Node.Replication.dbCleanup != nil {
+		m.Node.Replication.dbCleanup()
+	}
+
 	prog.Get("close-protocol-server").SetAsCurrent()
 	if m.Node.Protocol.server != nil {
 		m.Node.Protocol.server.Close()
@@ -316,6 +386,14 @@ func (m *Manager) Close(prog *progress.Progress) error {
 	prog.Get("close-tinder-service").SetAsCurrent()
 	if m.Node.Protocol.server != nil {
 		m.Node.Protocol.discovery.Close()
+		if m.Node.Protocol.localdisc != nil {
+			m.Node.Protocol.localdisc.Close()
+		}
+	}
+
+	prog.Get("close-mdns-service").SetAsCurrent()
+	if m.Node.Protocol.mdnsService != nil {
+		m.Node.Protocol.mdnsService.Close()
 	}
 
 	prog.Get("close-ipfs-node").SetAsCurrent()

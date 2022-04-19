@@ -1,44 +1,47 @@
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { View, TouchableOpacity, Animated } from 'react-native'
 import { SHA3 } from 'sha3'
 import palette from 'google-palette'
-import Color from 'color'
-import { Text, Icon } from '@ui-kitten/components'
-import Popover from 'react-native-popover-view'
+import { Icon } from '@ui-kitten/components'
 import { PanGestureHandler, State } from 'react-native-gesture-handler'
 import { useTranslation } from 'react-i18next'
 
-import beapi from '@berty-tech/api'
-import { useLastConvInteraction, useContact, useMsgrContext } from '@berty-tech/store/hooks'
-import { useStyles } from '@berty-tech/styles'
-import { getEmojiByName, getMediaTypeFromMedias } from '@berty-tech/components/utils'
+import beapi from '@berty/api'
+import {
+	useThemeColor,
+	InteractionUserMessage,
+	ParsedInteraction,
+	pbDateToNum,
+	useMessengerClient,
+} from '@berty/store'
+import { useStyles } from '@berty/styles'
+import {
+	useAppDispatch,
+	useAppSelector,
+	useInteractionAuthor,
+	useLastConvInteraction,
+	usePlaySound,
+} from '@berty/hooks'
+import { selectInteraction } from '@berty/redux/reducers/messenger.reducer'
 
 import { MemberAvatar } from '../../avatars'
 import { HyperlinkUserMessage, TimestampStatusUserMessage } from './UserMessageComponents'
-import { pbDateToNum } from '../../helpers'
-import { InteractionUserMessage, ParsedInteraction } from '@berty-tech/store/types.gen'
 import { PictureMessage } from './PictureMessage'
 import { AudioMessage } from './AudioMessage'
 import { FileMessage } from './FileMessage'
-import { useReplyReaction } from '../ReplyReactionContext'
-import PopoverView from './Popover'
-const pal = palette('tol-rainbow', 256)
+import { getMediaTypeFromMedias } from '../../utils'
+// We have delete this component cause unusable but we can find it here if we need: https://github.com/berty/berty/blob/38913ed828/js/packages/components/chat/message/Reactions.tsx
+// and a component dependencie https://github.com/berty/berty/blob/38913ed828f11799bb5f4471d1cb31dc182d9ed5/js/packages/components/shared-components/AnimatedNumber.tsx
+// import { Reactions } from './Reactions'
+import { MessageMenu } from '../modals/MessageMenu.modal'
+import { useModal } from '../../providers/modal.provider'
+import { setActiveReplyInteraction } from '@berty/redux/reducers/chatInputs.reducer'
+import { UnifiedText } from '../../shared-components/UnifiedText'
+// import { EmojiKeyboard } from '../modals/EmojiKeyboard.modal'
 
-const getPositionStyleForReactionView = (
-	messageWidth: number,
-	reactionWidth: number,
-	isMine: boolean,
-) => {
-	if (messageWidth - reactionWidth > 15 || isMine) {
-		return {
-			right: 15,
-		}
-	} else {
-		return {
-			left: messageWidth - 15,
-		}
-	}
-}
+const pal = palette('tol-rainbow', 256)
+const AVATAR_SIZE = 30
+const AVATAR_SPACE_RIGHT = 5
 
 const useStylesMessage = () => {
 	const [{ row, text, width }] = useStyles()
@@ -51,22 +54,21 @@ const useStylesMessage = () => {
 	}
 }
 
-const interactionsFilter = (inte: any) =>
+const interactionsFilter = (inte: ParsedInteraction) =>
 	inte.type === beapi.messenger.AppMessage.Type.TypeUserMessage && inte.isMine
 
 const getUserMessageState = (
-	inte: any,
-	members: { [key: string]: any } | undefined,
+	inte: ParsedInteraction,
+	members: { [key: string]: beapi.messenger.IMember | undefined } | undefined,
 	convKind: any,
-	previousMessage: any,
-	nextMessage: any,
-	border: any,
-	color: any,
+	previousMessage: ParsedInteraction | undefined,
+	nextMessage: ParsedInteraction | undefined,
+	colors: any,
 ) => {
 	const sentDate = pbDateToNum(inte?.sentDate)
 
 	let name = ''
-	let baseColor = color.blue
+	let baseColor = colors['background-header']
 	let isFollowupMessage: boolean | undefined = false
 	let isFollowedMessage: boolean | undefined = false
 	let isWithinCollapseDuration: number | boolean | null | undefined = false
@@ -77,13 +79,21 @@ const getUserMessageState = (
 		// State of OneToOne conversation
 		msgTextColor = inte.isMine
 			? inte.acknowledged
-				? color.white
+				? colors['reverted-main-text']
 				: cmd
-				? color.grey
-				: color.blue
-			: color.blue
-		msgBackgroundColor = inte.isMine ? (inte.acknowledged ? color.blue : color.white) : '#E2E4FF'
-		msgBorderColor = inte.isMine && (cmd ? border.color.grey : border.color.blue)
+				? colors['secondary-text']
+				: colors['background-header']
+			: colors['background-header']
+		msgBackgroundColor = inte.isMine
+			? inte.acknowledged
+				? colors['background-header']
+				: colors['reverted-main-text']
+			: colors['input-background']
+		msgBorderColor =
+			inte.isMine &&
+			(cmd
+				? { borderColor: colors['secondary-text'] }
+				: { borderColor: colors['background-header'] })
 
 		isWithinCollapseDuration =
 			nextMessage &&
@@ -94,7 +104,7 @@ const getUserMessageState = (
 	} else {
 		// State for MultiMember conversation
 		if (inte.memberPublicKey && members && members[inte.memberPublicKey]) {
-			name = members[inte.memberPublicKey].displayName
+			name = members[inte.memberPublicKey]?.displayName || ''
 		}
 		isFollowupMessage =
 			previousMessage && !inte.isMine && inte.memberPublicKey === previousMessage.memberPublicKey
@@ -114,18 +124,19 @@ const getUserMessageState = (
 		}
 		msgTextColor = inte.isMine
 			? inte.acknowledged
-				? color.white
+				? colors['reverted-main-text']
 				: cmd
-				? color.grey
+				? colors['secondary-text']
 				: baseColor
-			: baseColor
+			: colors['reverted-main-text']
 		msgBackgroundColor = inte.isMine
 			? inte.acknowledged
 				? baseColor
-				: color.white
-			: Color(baseColor).lighten(0.55).string()
-		msgBorderColor = inte.isMine && (cmd ? border.color.grey : { borderColor: baseColor })
-		msgSenderColor = inte.isMine ? 'red' : baseColor
+				: colors['reverted-main-text']
+			: baseColor
+		msgBorderColor =
+			inte.isMine && (cmd ? { borderColor: colors['secondary-text'] } : { borderColor: baseColor })
+		msgSenderColor = inte.isMine ? colors['warning-asset'] : baseColor
 	}
 
 	return {
@@ -143,36 +154,31 @@ const getUserMessageState = (
 
 export const UserMessage: React.FC<{
 	inte: InteractionUserMessage
-	members?: { [key: string]: any }
+	members?: { [key: string]: beapi.messenger.IMember | undefined }
 	convPK: string
 	convKind: any
 	previousMessage?: ParsedInteraction
 	nextMessage?: ParsedInteraction
 	replyOf?: ParsedInteraction
 	scrollToCid: (cid: string) => void
-}> = ({ inte, members, convPK, convKind, previousMessage, nextMessage, replyOf, scrollToCid }) => {
+}> = ({ inte, members, convPK, convKind, previousMessage, nextMessage, scrollToCid }) => {
 	const isGroup = convKind === beapi.messenger.Conversation.Type.MultiMemberType
 	const lastInte = useLastConvInteraction(convPK, interactionsFilter)
-	const repliedTo =
-		useContact(isGroup ? replyOf?.memberPublicKey : replyOf?.conversation?.contactPublicKey) ||
-		replyOf?.member
-
+	const replyOf = useAppSelector(state =>
+		selectInteraction(state, inte.conversationPublicKey || '', inte.targetCid || ''),
+	)
+	const repliedTo = useInteractionAuthor(replyOf?.conversationPublicKey || '', replyOf?.cid || '')
 	const _styles = useStylesMessage()
-	const ctx = useMsgrContext()
-	const [{ row, margin, padding, column, text, border, color }, { scaleSize }] = useStyles()
-	const { t }: { t: any } = useTranslation()
+	const playSound = usePlaySound()
+	const client = useMessengerClient()
+	const [{ row, margin, padding, column, text, border }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+	const { t } = useTranslation()
 	const [animatedValue] = useState(new Animated.Value(0))
-	const [messageLayoutWidth, setMessageLayoutWidth] = useState(0)
-	const [reactionLayoutWidth, setReactionLayoutWidth] = useState(0)
-
-	const {
-		activePopoverCid,
-		setActivePopoverCid,
-		setActiveReplyInte,
-		setActiveEmojiKeyboardCid,
-		highlightCid,
-		setHighlightCid,
-	} = useReplyReaction()
+	// const [messageLayoutWidth, setMessageLayoutWidth] = useState(0)
+	const { show } = useModal()
+	const dispatch = useAppDispatch()
+	const [highlightCid, setHighlightCid] = useState<string | undefined | null>()
 
 	const {
 		name,
@@ -184,29 +190,54 @@ export const UserMessage: React.FC<{
 		msgBorderColor,
 		msgSenderColor,
 		cmd,
-	} = getUserMessageState(inte, members, convKind, previousMessage, nextMessage, border, color)
+	} = getUserMessageState(inte, members, convKind, previousMessage, nextMessage, colors)
 
 	let repliedToColors =
 		repliedTo &&
-		getUserMessageState(replyOf, members, convKind, undefined, undefined, border, color)
+		replyOf &&
+		getUserMessageState(replyOf, members, convKind, undefined, undefined, colors)
 
-	const togglePopover = () => {
+	const handleSelectEmoji = useCallback(
+		(emoji: string, remove: boolean = false) => {
+			client
+				?.interact({
+					conversationPublicKey: convPK,
+					type: beapi.messenger.AppMessage.Type.TypeUserReaction,
+					payload: beapi.messenger.AppMessage.UserReaction.encode({
+						emoji,
+						state: !remove,
+					}).finish(),
+					targetCid: inte?.cid,
+				})
+				.then(() => {
+					playSound('messageSent')
+				})
+				.catch((e: unknown) => {
+					console.warn('e sending message:', e)
+				})
+		},
+		[client, convPK, playSound, inte?.cid],
+	)
+
+	const isHighlight = highlightCid === inte.cid
+
+	const togglePopover = useCallback(() => {
 		if (inte.isMine) {
 			return
 		}
-		if (activePopoverCid === inte.cid) {
-			setActivePopoverCid(null)
-		} else if (animatedValue._value === 0) {
-			setActivePopoverCid(inte.cid)
-		}
-		Animated.timing(animatedValue, {
-			toValue: 0,
-			duration: 50,
-			useNativeDriver: false,
-		}).start(() => {})
-	}
-
-	const isHighlight = highlightCid === inte.cid
+		show(
+			<MessageMenu
+				convPk={convPK}
+				cid={inte.cid!}
+				onSelectEmoji={handleSelectEmoji}
+				replyInteraction={{
+					...inte,
+					backgroundColor: msgBackgroundColor,
+					textColor: msgTextColor,
+				}}
+			/>,
+		)
+	}, [convPK, handleSelectEmoji, inte, msgBackgroundColor, msgTextColor, show])
 
 	return (
 		<View
@@ -220,7 +251,7 @@ export const UserMessage: React.FC<{
 			{!inte.isMine && isGroup && !isFollowedMessage && (
 				<View
 					style={{
-						paddingRight: 5 * scaleSize,
+						paddingRight: AVATAR_SPACE_RIGHT * scaleSize,
 						paddingBottom: 5 * scaleSize,
 						justifyContent: 'center',
 						alignItems: 'center',
@@ -230,38 +261,26 @@ export const UserMessage: React.FC<{
 					<MemberAvatar
 						publicKey={inte.memberPublicKey}
 						conversationPublicKey={inte.conversationPublicKey}
-						size={30 * scaleSize}
+						size={AVATAR_SIZE * scaleSize}
 						pressable
 					/>
 				</View>
 			)}
 
-			<View
-				style={[
-					column.top,
-					_styles.messageItem,
-					{
-						flexDirection: 'row',
-					},
-				]}
-			>
-				<View
-					style={{
-						alignItems: inte?.isMine ? 'flex-end' : 'flex-start',
-					}}
-				>
+			<View style={[column.top, _styles.messageItem, { flexDirection: 'row' }]}>
+				<View style={{ alignItems: inte?.isMine ? 'flex-end' : 'flex-start' }}>
 					{!inte.isMine && isGroup && !isFollowupMessage && (
 						<View style={[isFollowedMessage && margin.left.scale(40)]}>
-							<Text
+							<UnifiedText
 								style={[
-									text.bold.medium,
+									text.bold,
 									margin.bottom.tiny,
 									_styles.personNameInGroup,
 									{ color: msgSenderColor },
 								]}
 							>
 								{name}
-							</Text>
+							</UnifiedText>
 						</View>
 					)}
 
@@ -273,13 +292,13 @@ export const UserMessage: React.FC<{
 									alignItems: inte?.isMine ? 'flex-end' : 'flex-start',
 									marginTop: 7,
 								},
-								isFollowedMessage && { marginLeft: 35 * scaleSize },
+								isFollowedMessage && { marginLeft: (AVATAR_SIZE + AVATAR_SPACE_RIGHT) * scaleSize },
 							]}
 						>
 							<View
 								style={{
-									backgroundColor: '#F7F8FF',
-									borderColor: '#E4E5EF',
+									backgroundColor: colors['input-background'],
+									borderColor: colors['negative-asset'],
 									paddingVertical: 1.5,
 									paddingHorizontal: 20,
 									borderWidth: 1,
@@ -288,15 +307,23 @@ export const UserMessage: React.FC<{
 									zIndex: 2,
 								}}
 							>
-								<Text numberOfLines={1} style={{ color: '#6A81F2', fontSize: 10 }}>
-									{t('chat.reply.replied-to')} {repliedTo?.displayName || ''}
-								</Text>
+								<UnifiedText
+									numberOfLines={1}
+									style={[text.size.tiny, { color: colors['background-header'] }]}
+								>
+									<>
+										{t('chat.reply.replied-to')} {repliedTo?.displayName || ''}
+									</>
+								</UnifiedText>
 							</View>
 
 							<TouchableOpacity
 								onPress={() => {
-									scrollToCid(replyOf?.cid)
-									setHighlightCid(replyOf?.cid)
+									if (!replyOf?.cid) {
+										return
+									}
+									scrollToCid(replyOf.cid)
+									setHighlightCid(replyOf.cid)
 								}}
 								style={[
 									border.radius.top.medium,
@@ -309,27 +336,24 @@ export const UserMessage: React.FC<{
 									},
 								]}
 							>
-								<Text
+								<UnifiedText
 									numberOfLines={1}
-									style={{ color: repliedToColors?.msgTextColor, fontSize: 10, lineHeight: 17 }}
+									style={[text.size.tiny, { color: repliedToColors?.msgTextColor, lineHeight: 17 }]}
 								>
-									{replyOf?.payload?.body
-										? replyOf.payload.body
-										: `${t('chat.reply.response-to')} ${t(
-												`medias.${getMediaTypeFromMedias(replyOf?.medias)}`,
-										  )}`}
-								</Text>
+									{(replyOf?.type === beapi.messenger.AppMessage.Type.TypeUserMessage &&
+										replyOf?.payload?.body) ||
+										`${t('chat.reply.response-to')} ${t(
+											`medias.${getMediaTypeFromMedias(replyOf?.medias)}`,
+										)}`}
+								</UnifiedText>
 							</TouchableOpacity>
 						</View>
 					)}
 
-					<View
-						style={{
-							position: 'relative',
-						}}
-					>
+					<View style={{ position: 'relative' }}>
 						<PanGestureHandler
 							enabled={!inte.isMine}
+							activeOffsetX={20}
 							onGestureEvent={({ nativeEvent }) => {
 								if (nativeEvent.translationX > 0 && nativeEvent.translationX < 120) {
 									Animated.timing(animatedValue, {
@@ -345,14 +369,19 @@ export const UserMessage: React.FC<{
 									}).start()
 								}
 							}}
-							onHandlerStateChange={(event) => {
+							onHandlerStateChange={event => {
 								if (event.nativeEvent.oldState === State.ACTIVE) {
 									if (event.nativeEvent.translationX > 120) {
-										setActiveReplyInte({
-											...inte,
-											backgroundColor: msgBackgroundColor,
-											textColor: msgTextColor,
-										})
+										dispatch(
+											setActiveReplyInteraction({
+												convPK,
+												activeReplyInteraction: {
+													...inte,
+													backgroundColor: msgBackgroundColor,
+													textColor: msgTextColor,
+												},
+											}),
+										)
 										Animated.timing(animatedValue, {
 											toValue: 0,
 											duration: 50,
@@ -401,177 +430,100 @@ export const UserMessage: React.FC<{
 										name='undo'
 										height={30}
 										width={30}
-										fill='#D1D4DF'
+										fill={colors['negative-asset']}
 										onPress={() => {
-											setActiveReplyInte({
-												...inte,
-												backgroundColor: msgBackgroundColor,
-												textColor: msgTextColor,
-											})
-											setActivePopoverCid(null)
-											Animated.timing(animatedValue, {
-												toValue: 0,
-												duration: 100,
-												useNativeDriver: false,
-											}).start()
+											dispatch(
+												setActiveReplyInteraction({
+													convPK,
+													activeReplyInteraction: {
+														...inte,
+														backgroundColor: msgBackgroundColor,
+														textColor: msgTextColor,
+													},
+												}),
+											)
 										}}
 									/>
 								</Animated.View>
-								<Popover
-									isVisible={activePopoverCid === inte.cid}
-									popoverStyle={{
-										backgroundColor: 'transparent',
-										borderWidth: 0,
-										shadowColor: 'transparent',
-									}}
-									backgroundStyle={{
-										backgroundColor: 'transparent',
-									}}
-									arrowStyle={{
-										backgroundColor: 'transparent',
-									}}
-									onRequestClose={() => {
-										setActivePopoverCid(null)
-									}}
-									from={
-										<TouchableOpacity
-											onLayout={(event) => {
-												setMessageLayoutWidth(event.nativeEvent.layout.width)
-											}}
-											disabled={inte.isMine}
-											activeOpacity={0.9}
-											onLongPress={togglePopover}
-											style={{
-												marginBottom: inte?.reactions?.length ? 10 : 0,
-											}}
-										>
-											<>
-												{!!inte.medias?.length && (
-													<View
-														style={[
-															isFollowedMessage && margin.left.scale(40),
-															previousMessage?.medias?.[0]?.mimeType
-																? margin.top.tiny
-																: margin.top.small,
-															nextMessage?.medias?.[0]?.mimeType
-																? margin.bottom.tiny
-																: margin.bottom.small,
-														]}
-													>
-														{(() => {
-															if (inte.medias[0]?.mimeType?.startsWith('image')) {
-																return (
-																	<PictureMessage
-																		medias={inte.medias}
-																		onLongPress={togglePopover}
-																		isHighlight={isHighlight}
-																	/>
-																)
-															} else if (inte.medias[0]?.mimeType?.startsWith('audio')) {
-																return (
-																	<AudioMessage
-																		medias={inte.medias}
-																		onLongPress={togglePopover}
-																		isHighlight={isHighlight}
-																	/>
-																)
-															} else {
-																return (
-																	<FileMessage
-																		medias={inte.medias}
-																		onLongPress={togglePopover}
-																		isHighlight={isHighlight}
-																	/>
-																)
-															}
-														})()}
-													</View>
-												)}
-												{!!inte.payload.body && (
-													<HyperlinkUserMessage
-														inte={inte}
-														msgBorderColor={msgBorderColor}
-														isFollowedMessage={isFollowedMessage}
-														msgBackgroundColor={msgBackgroundColor}
-														msgTextColor={msgTextColor}
-														isHighlight={isHighlight}
-													/>
-												)}
-											</>
-										</TouchableOpacity>
-									}
+								<TouchableOpacity
+									// onLayout={event => {
+									// 	setMessageLayoutWidth(event.nativeEvent.layout.width)
+									// }}
+									disabled={inte.isMine}
+									activeOpacity={0.9}
+									onLongPress={togglePopover}
+									style={{ marginBottom: inte?.reactions?.length ? 10 : 0 }}
 								>
-									<PopoverView
-										onReply={() => {
-											setActivePopoverCid(null)
-											setTimeout(() => {
-												setActiveReplyInte({
-													...inte,
-													backgroundColor: msgBackgroundColor,
-													textColor: msgTextColor,
-												})
-											}, 500)
-										}}
-										onEmojiKeyboard={() => {
-											setActivePopoverCid(null)
-											setActiveEmojiKeyboardCid(inte.cid)
-										}}
-										onSelectEmoji={(emoji) => {
-											ctx.client
-												?.interact({
-													conversationPublicKey: convPK,
-													type: beapi.messenger.AppMessage.Type.TypeUserReaction,
-													payload: beapi.messenger.AppMessage.UserReaction.encode({
-														emoji: emoji,
-														state: true,
-													}).finish(),
-													targetCid: inte?.cid,
-												})
-												.then(() => {
-													ctx.playSound('messageSent')
-													setActivePopoverCid(null)
-													setActiveEmojiKeyboardCid(null)
-												})
-												.catch((e) => {
-													console.warn('e sending message:', e)
-												})
-										}}
-									/>
-								</Popover>
+									<>
+										{!!inte.medias?.length && (
+											<View
+												style={[
+													isFollowedMessage && {
+														marginLeft: (AVATAR_SIZE + AVATAR_SPACE_RIGHT) * scaleSize,
+													},
+													previousMessage?.medias?.[0]?.mimeType
+														? margin.top.tiny
+														: margin.top.small,
+													nextMessage?.medias?.[0]?.mimeType
+														? margin.bottom.tiny
+														: margin.bottom.small,
+												]}
+											>
+												{(() => {
+													if (inte.medias[0]?.mimeType?.startsWith('image')) {
+														return (
+															<PictureMessage
+																medias={inte.medias}
+																onLongPress={togglePopover}
+																isHighlight={isHighlight}
+															/>
+														)
+													} else if (inte.medias[0]?.mimeType?.startsWith('audio')) {
+														return (
+															<AudioMessage
+																medias={inte.medias}
+																onLongPress={togglePopover}
+																isHighlight={isHighlight}
+																isMine={!!inte.isMine}
+															/>
+														)
+													} else {
+														return (
+															<FileMessage
+																medias={inte.medias}
+																onLongPress={togglePopover}
+																isHighlight={isHighlight}
+															/>
+														)
+													}
+												})()}
+											</View>
+										)}
+										{!!(!inte.medias?.length || inte.payload?.body) && (
+											<HyperlinkUserMessage
+												inte={inte}
+												msgBorderColor={msgBorderColor}
+												isFollowedMessage={isFollowedMessage}
+												msgBackgroundColor={msgBackgroundColor}
+												msgTextColor={msgTextColor}
+												isHighlight={isHighlight}
+											/>
+										)}
+									</>
+								</TouchableOpacity>
 							</Animated.View>
 						</PanGestureHandler>
-
-						{activePopoverCid === inte.cid && <Popover />}
-						{!!inte?.reactions?.length && !!messageLayoutWidth && (
-							<View
-								onLayout={(event) => {
-									setReactionLayoutWidth(event.nativeEvent.layout.width)
+						{/* {!!messageLayoutWidth && (
+							<Reactions
+								convPk={convPK}
+								reactions={inte.reactions || []}
+								cid={inte.cid!}
+								onEmojiKeyboard={() => {
+									show(<EmojiKeyboard conversationPublicKey={convPK} targetCid={inte.cid!} />)
 								}}
-								style={[
-									border.radius.large,
-									{
-										flexDirection: 'row',
-										backgroundColor: '#F7F8FF',
-										borderRadius: 20,
-										borderWidth: 1,
-										borderColor: '#E3E4EE',
-										paddingVertical: 2,
-										paddingHorizontal: 4,
-										position: 'absolute',
-										bottom: inte?.payload?.body ? 0 : 9,
-									},
-									getPositionStyleForReactionView(
-										messageLayoutWidth,
-										reactionLayoutWidth,
-										!!inte.isMine,
-									),
-								]}
-							>
-								{inte.reactions.map(({ emoji }) => (
-									<Text style={{ marginHorizontal: 2, fontSize: 10 }}>{getEmojiByName(emoji)}</Text>
-								))}
-							</View>
-						)}
+								onRemoveEmoji={handleSelectEmoji}
+							/>
+						)} */}
 					</View>
 					{!isWithinCollapseDuration && (
 						<TimestampStatusUserMessage

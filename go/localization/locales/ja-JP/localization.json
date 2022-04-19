@@ -1,0 +1,66 @@
+{
+  "auth": {
+    "services": {
+      "rpl": {
+        "name": "",
+        "description": "",
+        "benefitBadge": "パフォーマンス"
+      },
+      "psh": {
+        "name": "プッシュ通知",
+        "description": "",
+        "benefitBadge": "パフォーマンス"
+      }
+    },
+    "pageTitle": "",
+    "connectButton_one": "",
+    "connectButton_other": "",
+    "privacyPolicyLabel": "プライバシーポリシー"
+  },
+  "push": {
+    "message": {},
+    "error": {
+      "title": ""
+    },
+    "voiceMessage": {
+      "bodyWithNumberOfMedia_one": "音声メッセージを送信しました",
+      "bodyWithNumberOfMedia_other": "%[1] 件の音声メッセージを送信しました"
+    },
+    "gif": {
+      "bodyWithNumberOfMedia_one": "Gif 画像を送信しました",
+      "bodyWithNumberOfMedia_other": "%[1] 件の gif 画像を送信しました"
+    },
+    "photo": {
+      "bodyWithNumberOfMedia_one": "写真を送信しました",
+      "bodyWithNumberOfMedia_other": "%[1] 件の写真を送信しました"
+    },
+    "media": {
+      "bodyWithNumberOfMedia_one": "",
+      "bodyWithNumberOfMedia_other": ""
+    },
+    "reaction": {
+      "bodyWithDisplayNameAndEmoji": "%[1]v が %[2]v でメッセージに反応しました"
+    },
+    "groupInvitation": {
+      "bodyWithGroupName": ""
+    },
+    "unknown": {
+      "body": ""
+    },
+    "conversationNameChanged": {
+      "body": ""
+    },
+    "memberNameChanged": {
+      "body": ""
+    },
+    "memberPictureChanged": {
+      "body": ""
+    },
+    "memberDetailsChanged": {
+      "body": ""
+    },
+    "replyOptionsOffered": {
+      "body": ""
+    }
+  }
+}

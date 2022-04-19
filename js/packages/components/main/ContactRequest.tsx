@@ -1,8 +1,11 @@
 import React from 'react'
+
+import { ScreenFC } from '@berty/navigation'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store'
+import messengerMethodsHooks from '@berty/store/methods'
+
 import { Request } from '../shared-components/Request'
-import { ScreenProps, useNavigation } from '@berty-tech/navigation'
-import { useStyles } from '@berty-tech/styles'
-import messengerMethodsHooks from '@berty-tech/store/methods'
 
 //
 // ContactRequest => Accept/Refuse
@@ -27,13 +30,13 @@ const useStylesContactRequest = () => {
 	}
 }
 
-export const ContactRequest: React.FC<ScreenProps.Main.ContactRequest> = ({
+export const ContactRequest: ScreenFC<'Main.ContactRequest'> = ({
 	route: { params },
+	navigation: { goBack },
 }) => {
 	const _styles = useStylesContactRequest()
-	const [{ color }] = useStyles()
-	const { goBack } = useNavigation()
-	const { call: accept } = (messengerMethodsHooks as any).useContactAccept()
+	const colors = useThemeColor()
+	const { call: accept } = messengerMethodsHooks.useContactAccept()
 	return (
 		<Request
 			contactPublicKey={params.contactId}
@@ -47,9 +50,9 @@ export const ContactRequest: React.FC<ScreenProps.Main.ContactRequest> = ({
 					},
 					style: _styles.firstRequestButton,
 					title: 'REFUSE',
-					titleColor: color.grey,
+					titleColor: colors['secondary-text'],
 					icon: 'close-outline',
-					iconColor: color.grey,
+					iconColor: colors['secondary-text'],
 					disabled: true,
 				},
 				{
@@ -59,9 +62,9 @@ export const ContactRequest: React.FC<ScreenProps.Main.ContactRequest> = ({
 					},
 					style: _styles.secondRequestButton,
 					title: 'ACCEPT',
-					titleColor: color.blue,
+					titleColor: colors['background-header'],
 					icon: 'checkmark-outline',
-					iconColor: color.blue,
+					iconColor: colors['background-header'],
 				},
 			]}
 		/>

@@ -9,6 +9,8 @@ import (
 	p2p_discovery "github.com/libp2p/go-libp2p-core/discovery"
 	"github.com/libp2p/go-libp2p-core/host"
 	"go.uber.org/zap"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 type watchdogsAdvertiser struct {
@@ -61,7 +63,7 @@ func (wa *watchdogsAdvertiser) Advertise(_ context.Context, ns string, opts ...p
 		wa.watchdogs[ns] = time.AfterFunc(wa.resetInterval, func() {
 			cancel()
 			wa.logger.Debug("advertise expired",
-				zap.String("ns", ns),
+				logutil.PrivateString("ns", ns),
 				zap.Duration("duration", time.Since(timer)),
 			)
 
@@ -73,7 +75,7 @@ func (wa *watchdogsAdvertiser) Advertise(_ context.Context, ns string, opts ...p
 			// wa.unregister(ctx, ns)
 		})
 		wa.advertises(wctx, ns, opts...)
-		wa.logger.Debug("advertise started", zap.String("ns", ns))
+		wa.logger.Debug("advertise started", logutil.PrivateString("ns", ns))
 	}
 
 	wa.muAdvertiser.Unlock()
@@ -90,7 +92,25 @@ func (wa *watchdogsAdvertiser) unregister(ctx context.Context, ns string) {
 }
 
 func (wa *watchdogsAdvertiser) advertises(ctx context.Context, ns string, opts ...p2p_discovery.Option) {
+	var options p2p_discovery.Options
+	if err := options.Apply(opts...); err != nil {
+		wa.logger.Warn("unable to apply options", zap.Error(err))
+		return
+	}
+
+	var filters []string
+	if f, ok := options.Other[optionFilterDriver]; ok {
+		if filters, ok = f.([]string); !ok {
+			wa.logger.Error("unable to parse filter driver option")
+			return
+		}
+	}
+
 	for _, d := range wa.drivers {
+		if shoudlFilterDriver(d.Name, filters) {
+			continue
+		}
+
 		go wa.advertise(ctx, d, ns, opts...)
 	}
 }
@@ -108,7 +128,7 @@ func (wa *watchdogsAdvertiser) advertise(ctx context.Context, d *Driver, ns stri
 		if err != nil {
 			wa.logger.Warn("unable to advertise",
 				zap.String("driver", d.Name),
-				zap.String("ns", ns), zap.Error(err))
+				logutil.PrivateString("ns", ns), zap.Error(err))
 			select {
 			case <-ctx.Done():
 				return
@@ -125,7 +145,7 @@ func (wa *watchdogsAdvertiser) advertise(ctx context.Context, d *Driver, ns stri
 
 		wa.logger.Debug("advertise",
 			zap.String("driver", d.Name),
-			zap.String("ns", ns),
+			logutil.PrivateString("ns", ns),
 			zap.Duration("ttl", ttl),
 			zap.Duration("took", took),
 			zap.Duration("next", deadline),

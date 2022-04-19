@@ -13,10 +13,12 @@ services:
       while [ ! -f /shared/testbot_daemon1.txt ]; do
         sleep 1;
       done;
-      sleep 60;
-      echo this sleep could be replace by something that auto-retry sending contact requests again and again;
+
+      sleep 10
+
       berty-integration
         -integration.testbot `cat /shared/testbot_daemon1.txt`
+        -p2p.disc-disable-filter=true
         -p2p.rdvp=/dns4/rdvp/tcp/4040/p2p/`cat /shared/rdvp-pub.txt`
       ;"
     links:
@@ -55,9 +57,10 @@ services:
     command: -xec "
       berty share-invite > /shared/testbot_daemon1.txt.tmp;
       mv /shared/testbot_daemon1.txt.tmp /shared/testbot_daemon1.txt;
-      berty daemon
+      berty -log.filters=debug:bty.tinder daemon
         -node.listeners=/ip4/0.0.0.0/tcp/9091/grpc
         -p2p.mdns=false
+        -p2p.disc-disable-filter=true
         -p2p.rdvp=/dns4/rdvp/tcp/4040/p2p/`cat /shared/rdvp-pub.txt`
       "
     depends_on:
@@ -76,9 +79,10 @@ services:
     command: -xec "
       berty share-invite > /shared/testbot_daemon2.txt.tmp;
       mv /shared/testbot_daemon2.txt.tmp /shared/testbot_daemon2.txt;
-      berty daemon
+      berty -log.filters=debug:bty.tinder daemon
         -node.listeners=/ip4/0.0.0.0/tcp/9091/grpc
         -p2p.mdns=false
+        -p2p.disc-disable-filter=true
         -p2p.rdvp=/dns4/rdvp/tcp/4040/p2p/`cat /shared/rdvp-pub.txt`
       "
     depends_on:
@@ -103,8 +107,8 @@ services:
       "
 
   # replication:
-  # betabot:
-  # betabot_daemon:
+  # welcomebot:
+  # welcomebot_daemon:
 
 volumes:
   shared:

@@ -6,9 +6,9 @@ import android.util.LogPrinter;
 import bertybridge.NativeLoggerDriver;
 
 public class LoggerDriver implements NativeLoggerDriver {
-    private String subsystem;
-    private String category;
-    private boolean isEnabled;
+    private final String subsystem;
+    private final String category;
+    private final boolean isEnabled;
 
     public LoggerDriver() {
         this("logger", "log");
@@ -37,8 +37,10 @@ public class LoggerDriver implements NativeLoggerDriver {
             throw new Exception("Empty message");
         }
 
-        if (namespace == null) {
-            throw new Exception("Empty namespace");
+        if (namespace != null && namespace != "") {
+            namespace = this.subsystem + "." + namespace;
+        } else {
+            namespace = this.subsystem;
         }
 
         int priority;
@@ -69,7 +71,7 @@ public class LoggerDriver implements NativeLoggerDriver {
                 priority = Log.INFO;
         }
         LogPrinter logPrinter = new LogPrinter(priority, namespace);
-        String out = String.format("[%s] [%s]: %s", level, this.subsystem + "." + namespace, message);
+        String out = String.format("[%s] [%s]: %s", level, namespace, message);
         logPrinter.println(out);
     }
 

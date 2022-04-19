@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native'
 import mem from 'mem'
-import _ from 'lodash'
+import mapValues from 'lodash/mapValues'
+
 import { Declaration, Styles, ColorsStyles } from './types'
 import { initialScaleSize, initialFontScale, initialScaleHeight } from './constant'
 import { mapColorsDeclaration } from './map-colors'
@@ -47,17 +48,17 @@ export const defaultStylesDeclaration: Declaration = {
 	},
 	text: {
 		sizes: {
-			tiny: 10,
-			small: 12,
+			tiny: 11,
+			small: 13,
 			medium: 15,
-			large: 19,
+			large: 20,
 			big: 22,
 			huge: 26,
 		},
 	},
 }
 
-export const mapDeclarationWithDims = (
+const mapDeclarationWithDims = (
 	decl: Declaration,
 	{ fontScale, scaleSize } = {
 		fontScale: initialFontScale,
@@ -69,7 +70,7 @@ export const mapDeclarationWithDims = (
 			...decl.colors.default,
 			...decl.colors,
 		} as ColorsStyles<string>,
-		background: mapColorsDeclaration(decl.colors, (v) => ({ backgroundColor: v })),
+		background: mapColorsDeclaration(decl.colors, v => ({ backgroundColor: v })),
 		padding: {
 			tiny: { padding: decl.sides.tiny },
 			small: { padding: decl.sides.small },
@@ -77,7 +78,7 @@ export const mapDeclarationWithDims = (
 			large: { padding: decl.sides.large },
 			big: { padding: decl.sides.big },
 			huge: { padding: decl.sides.huge },
-			scale: mem((size) => StyleSheet.create({ scale: { padding: size * scaleSize } }).scale),
+			scale: mem(size => StyleSheet.create({ scale: { padding: size * scaleSize } }).scale),
 			...mapSides(decl.sides, 'padding'),
 		},
 		margin: {
@@ -87,22 +88,18 @@ export const mapDeclarationWithDims = (
 			large: { margin: decl.sides.large },
 			big: { margin: decl.sides.big },
 			huge: { margin: decl.sides.huge },
-			scale: mem((size) => StyleSheet.create({ scale: { margin: size * scaleSize } }).scale),
+			scale: mem(size => StyleSheet.create({ scale: { margin: size * scaleSize } }).scale),
 			...mapSides(decl.sides, 'margin'),
 		},
 		border: mapBorder(decl, { scaleSize }),
 		text: {
-			color: mapColorsDeclaration(decl.colors, (v) => ({ color: v })),
-			bold: {
-				...StyleSheet.create({
-					// default is '600'
-					small: { fontWeight: '500' },
-					medium: { fontWeight: 'bold' }, // '700'
-					huge: { fontWeight: '900' },
-				}),
-			},
+			color: mapColorsDeclaration(decl.colors, v => ({ color: v })),
 			...StyleSheet.create({
-				italic: { fontStyle: 'italic' },
+				italic: { fontFamily: 'Italic Open Sans' },
+				bold: { fontFamily: 'Bold Open Sans' },
+				extraBold: { fontFamily: 'Extra Bold Open Sans' },
+				light: { fontFamily: 'Light Open Sans' },
+				lightItalic: { fontFamily: 'Light Italic Open Sans' },
 			}),
 			size: {
 				...StyleSheet.create({
@@ -202,11 +199,11 @@ export const mapDeclarationWithDims = (
 				},
 			}),
 			scale: mem(
-				(values) =>
+				values =>
 					StyleSheet.create({
 						scale: {
 							position: 'absolute',
-							..._.mapValues(values, (v) => (v || 0) * scaleSize),
+							...mapValues(values, v => (v || 0) * scaleSize),
 						},
 					}).scale,
 				{ cacheKey: JSON.stringify },
@@ -239,7 +236,7 @@ export const mapDeclarationWithDims = (
 
 export const mapScaledDeclarationWithDims = (
 	decl: Declaration,
-	{ fontScale, scaleSize, scaleHeight } = {
+	{ fontScale, scaleSize, scaleHeight: _ } = {
 		fontScale: initialFontScale,
 		scaleSize: initialScaleSize,
 		scaleHeight: initialScaleHeight,
@@ -248,12 +245,12 @@ export const mapScaledDeclarationWithDims = (
 	return mapDeclarationWithDims(
 		{
 			...decl,
-			sides: _.mapValues(decl.sides, (n: number) => n * scaleSize),
+			sides: mapValues(decl.sides, (n: number) => n * scaleSize),
 			text: {
 				...decl.text,
-				sizes: _.mapValues(decl.text.sizes, (n: number) => n * fontScale),
+				sizes: mapValues(decl.text.sizes, (n: number) => n * fontScale),
 			},
 		},
-		{ fontScale, scaleSize, scaleHeight },
+		{ fontScale, scaleSize },
 	)
 }

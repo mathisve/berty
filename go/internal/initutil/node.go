@@ -1,36 +1,24 @@
 package initutil
 
 import (
-	"context"
-	"crypto/ed25519"
 	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
 	"os/user"
-	"path"
-	"strings"
 
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
-	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
-	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	grpcgw "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	datastore "github.com/ipfs/go-datastore"
-	grpc_trace "go.opentelemetry.io/otel/instrumentation/grpctrace"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"moul.io/zapgorm2"
 
+	"berty.tech/berty/v2/go/internal/accountutils"
+	"berty.tech/berty/v2/go/internal/cryptoutil"
+	"berty.tech/berty/v2/go/internal/datastoreutil"
+	"berty.tech/berty/v2/go/internal/grpcserver"
 	"berty.tech/berty/v2/go/internal/grpcutil"
 	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/internal/lifecycle"
-	"berty.tech/berty/v2/go/internal/tracer"
 	"berty.tech/berty/v2/go/pkg/bertymessenger"
 	"berty.tech/berty/v2/go/pkg/bertyprotocol"
 	"berty.tech/berty/v2/go/pkg/errcode"
@@ -39,6 +27,11 @@ import (
 )
 
 const (
+	FlagNameNodeListeners         = "node.listeners"
+	FlagNameNodeAccountListeners  = "node.account.listeners"
+	FlagValueNodeListeners        = "/ip4/127.0.0.1/tcp/9091/grpc"
+	FlagValueNodeAccountListeners = "/ip4/127.0.0.1/tcp/9092/grpc"
+
 	PerformancePreset = "performance"
 	AnonymityPreset   = "anonymity"
 	VolatilePreset    = "volatile"
@@ -50,6 +43,8 @@ const (
 
 func (m *Manager) SetupLocalProtocolServerFlags(fs *flag.FlagSet) {
 	m.Node.Protocol.requiredByClient = true
+	fs.StringVar(&m.Node.Protocol.PushPlatformToken, "node.default-push-token", "", "base 64 encoded default platform push token")
+	fs.BoolVar(&m.Node.Protocol.ServiceInsecureMode, "node.service-insecure", false, "use insecure connection on services")
 	m.SetupDatastoreFlags(fs)
 	m.SetupLocalIPFSFlags(fs)
 	// p2p.remote-ipfs
@@ -61,11 +56,15 @@ func (m *Manager) SetupProtocolAuth(fs *flag.FlagSet) {
 }
 
 func (m *Manager) SetupEmptyGRPCListenersFlags(fs *flag.FlagSet) {
-	fs.StringVar(&m.Node.GRPC.Listeners, "node.listeners", "", "gRPC API listeners")
+	fs.StringVar(&m.Node.GRPC.Listeners, FlagNameNodeListeners, "", "gRPC API listeners")
 }
 
 func (m *Manager) SetupDefaultGRPCListenersFlags(fs *flag.FlagSet) {
-	fs.StringVar(&m.Node.GRPC.Listeners, "node.listeners", "/ip4/127.0.0.1/tcp/9091/grpc", "gRPC API listeners")
+	fs.StringVar(&m.Node.GRPC.Listeners, FlagNameNodeListeners, FlagValueNodeListeners, "gRPC API listeners")
+}
+
+func (m *Manager) SetupDefaultGRPCAccountListenersFlags(fs *flag.FlagSet) {
+	fs.StringVar(&m.Node.GRPC.AccountListeners, FlagNameNodeAccountListeners, FlagValueNodeAccountListeners, "gRPC account API listeners")
 }
 
 func (m *Manager) SetupPresetFlags(fs *flag.FlagSet) {
@@ -111,12 +110,8 @@ func (m *Manager) applyPreset() error {
 	case PerformancePreset:
 		// will do later
 	case AnonymityPreset:
-		// Force tor in this mode
-		m.Node.Protocol.Tor.Mode = TorRequired
-		// FIXME: raise an error if tor is not available on the node
-
 		// Disable proximity communications
-		m.Node.Protocol.MDNS = false
+		m.Node.Protocol.MDNS.Enable = false
 		m.Node.Protocol.MultipeerConnectivity = false
 		m.Node.Protocol.Ble.Enable = false
 		m.Node.Protocol.Nearby.Enable = false
@@ -138,6 +133,20 @@ func (m *Manager) GetLocalProtocolServer() (bertyprotocol.Service, error) {
 		return nil, m.getContext().Err()
 	}
 	return m.getLocalProtocolServer()
+}
+
+func (m *Manager) getPushSecretKey() (*[cryptoutil.KeySize]byte, error) {
+	pushKey := &[cryptoutil.KeySize]byte{}
+	if m.Node.Protocol.DevicePushKeyPath != "" {
+		var err error
+
+		_, pushKey, err = accountutils.GetDevicePushKeyForPath(m.Node.Protocol.DevicePushKeyPath, true)
+		if err != nil {
+			return nil, errcode.ErrInternal.Wrap(err)
+		}
+	}
+
+	return pushKey, nil
 }
 
 func (m *Manager) getLocalProtocolServer() (bertyprotocol.Service, error) {
@@ -173,20 +182,27 @@ func (m *Manager) getLocalProtocolServer() (bertyprotocol.Service, error) {
 	// protocol service
 	{
 		var (
-			deviceDS = ipfsutil.NewDatastoreKeystore(ipfsutil.NewNamespacedDatastore(rootDS, datastore.NewKey(bertyprotocol.NamespaceDeviceKeystore)))
-			deviceKS = bertyprotocol.NewDeviceKeystore(deviceDS)
+			deviceDS = ipfsutil.NewDatastoreKeystore(datastoreutil.NewNamespacedDatastore(rootDS, datastore.NewKey(bertyprotocol.NamespaceDeviceKeystore)))
+			deviceKS = cryptoutil.NewDeviceKeystore(deviceDS, nil)
 		)
+
+		pushKey, err := m.getPushSecretKey()
+		if err != nil {
+			return nil, errcode.TODO.Wrap(err)
+		}
 
 		// initialize new protocol client
 		opts := bertyprotocol.Opts{
-			Host:           m.Node.Protocol.ipfsNode.PeerHost,
-			PubSub:         m.Node.Protocol.pubsub,
-			TinderDriver:   m.Node.Protocol.discovery,
-			IpfsCoreAPI:    m.Node.Protocol.ipfsAPI,
-			Logger:         logger,
-			RootDatastore:  rootDS,
-			DeviceKeystore: deviceKS,
-			OrbitDB:        odb,
+			Host:             m.Node.Protocol.ipfsNode.PeerHost,
+			PubSub:           m.Node.Protocol.pubsub,
+			TinderDriver:     m.Node.Protocol.discovery,
+			IpfsCoreAPI:      m.Node.Protocol.ipfsAPI,
+			Logger:           logger,
+			RootDatastore:    rootDS,
+			DeviceKeystore:   deviceKS,
+			OrbitDB:          odb,
+			PushKey:          pushKey,
+			GRPCInsecureMode: m.Node.Protocol.ServiceInsecureMode,
 		}
 
 		m.Node.Protocol.server, err = bertyprotocol.New(m.getContext(), opts)
@@ -218,11 +234,7 @@ func (m *Manager) getGRPCClientConn() (*grpc.ClientConn, error) {
 		return m.Node.GRPC.clientConn, nil
 	}
 
-	trClient := tracer.New("grpc-client")
-	clientOpts := []grpc.DialOption{
-		grpc.WithUnaryInterceptor(grpc_trace.UnaryClientInterceptor(trClient)),
-		grpc.WithStreamInterceptor(grpc_trace.StreamClientInterceptor(trClient)),
-	}
+	clientOpts := []grpc.DialOption(nil)
 
 	if m.Node.GRPC.RemoteAddr != "" {
 		clientOpts = append(clientOpts, grpc.WithInsecure()) // make a flag for this?
@@ -245,6 +257,7 @@ func (m *Manager) getGRPCClientConn() (*grpc.ClientConn, error) {
 					return nil, errcode.TODO.Wrap(err)
 				}
 			}
+
 			if m.Node.Messenger.requiredByClient {
 				_, err := m.getLocalMessengerServer()
 				if err != nil {
@@ -292,6 +305,20 @@ func (m *Manager) GetMessengerClient() (messengertypes.MessengerServiceClient, e
 	return m.getMessengerClient()
 }
 
+func (m *Manager) GetAccountStorageKey() ([]byte, error) {
+	if m.nativeKeystore == nil {
+		return nil, nil
+	}
+	return accountutils.GetOrCreateStorageKeyForAccount(m.nativeKeystore, m.accountID)
+}
+
+func (m *Manager) GetAccountStorageSalt() ([]byte, error) {
+	if m.nativeKeystore == nil {
+		return nil, nil
+	}
+	return accountutils.GetOrCreateStorageSaltForAccount(m.nativeKeystore, m.accountID)
+}
+
 func (m *Manager) SetLifecycleManager(manager *lifecycle.Manager) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -329,9 +356,11 @@ func (m *Manager) getMessengerClient() (messengertypes.MessengerServiceClient, e
 	if err != nil {
 		return nil, errcode.TODO.Wrap(err)
 	}
+
 	m.Node.Messenger.client = messengertypes.NewMessengerServiceClient(grpcClient)
 
 	m.initLogger.Debug("messenger client initialized and cached")
+
 	return m.Node.Messenger.client, nil
 }
 
@@ -374,89 +403,22 @@ func (m *Manager) getGRPCServer() (*grpc.Server, *grpcgw.ServeMux, error) {
 		return nil, nil, err
 	}
 
-	grpcLogger := logger.Named("grpc")
-	// Define customfunc to handle panic
-	panicHandler := func(p interface{}) (err error) {
-		return status.Errorf(codes.Unknown, "panic recover: %v", p)
-	}
-
-	// Shared options for the logger, with a custom gRPC code to log level function.
-	recoverOpts := []grpc_recovery.Option{
-		grpc_recovery.WithRecoveryHandler(panicHandler),
-	}
-
-	zapOpts := []grpc_zap.Option{}
-
-	// override grpc logger
-	ReplaceGRPCLogger(grpcLogger)
-
-	tr := tracer.New("grpc-server")
-	// noop auth func
-	authFunc := func(ctx context.Context) (context.Context, error) { return ctx, nil }
-
-	if m.Node.Protocol.AuthSecret != "" || m.Node.Protocol.AuthPublicKey != "" {
-		man, err := getAuthTokenVerifier(m.Node.Protocol.AuthSecret, m.Node.Protocol.AuthPublicKey)
-		if err != nil {
-			return nil, nil, errcode.TODO.Wrap(err)
-		}
-
-		authFunc = man.GRPCAuthInterceptor(bertyprotocol.ServiceReplicationID)
-	}
-
-	grpcOpts := []grpc.ServerOption{
-		grpc_middleware.WithUnaryServerChain(
-			grpc_recovery.UnaryServerInterceptor(recoverOpts...),
-			grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.CodeGenRequestFieldExtractor)),
-			grpc_zap.UnaryServerInterceptor(grpcLogger, zapOpts...),
-			grpc_trace.UnaryServerInterceptor(tr),
-			grpc_auth.UnaryServerInterceptor(authFunc),
-		),
-		grpc_middleware.WithStreamServerChain(
-			grpc_recovery.StreamServerInterceptor(recoverOpts...),
-			grpc_ctxtags.StreamServerInterceptor(grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.CodeGenRequestFieldExtractor)),
-			grpc_trace.StreamServerInterceptor(tr),
-			grpc_zap.StreamServerInterceptor(grpcLogger, zapOpts...),
-			grpc_auth.StreamServerInterceptor(authFunc),
-		),
-	}
-
-	grpcServer := grpc.NewServer(grpcOpts...)
-	grpcGatewayMux := grpcgw.NewServeMux()
-
-	if m.Node.GRPC.Listeners != "" {
-		addrs := strings.Split(m.Node.GRPC.Listeners, ",")
-		maddrs, err := ipfsutil.ParseAddrs(addrs...)
-		if err != nil {
-			return nil, nil, err
-		}
-		m.Node.GRPC.listeners = make([]grpcutil.Listener, len(maddrs))
-
-		server := grpcutil.Server{
-			GRPCServer: grpcServer,
-			GatewayMux: grpcGatewayMux,
-		}
-
-		for idx, maddr := range maddrs {
-			maddrStr := maddr.String()
-			l, err := grpcutil.Listen(maddr)
-			if err != nil {
-				return nil, nil, errcode.TODO.Wrap(err)
-			}
-			m.Node.GRPC.listeners[idx] = l
-
-			m.workers.Add(func() error {
-				m.initLogger.Info("serving", zap.String("maddr", maddrStr))
-				return server.Serve(l)
-			}, func(error) {
-				l.Close()
-				m.initLogger.Debug("closing done", zap.String("maddr", maddrStr))
-			})
-		}
+	grpcServer, grpcGatewayMux, listeners, err := grpcserver.InitGRPCServer(&m.workers, &grpcserver.GRPCOpts{
+		Logger:        logger,
+		AuthPublicKey: m.Node.Protocol.AuthPublicKey,
+		AuthSecret:    m.Node.Protocol.AuthSecret,
+		Listeners:     m.Node.GRPC.Listeners,
+		ServiceID:     m.Node.Protocol.ServiceID,
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 
 	m.initLogger.Debug("gRPC server initialized and cached")
 	m.Node.GRPC.server = grpcServer
 	m.Node.GRPC.gatewayMux = grpcGatewayMux
+	m.Node.GRPC.listeners = listeners
+
 	return m.Node.GRPC.server, m.Node.GRPC.gatewayMux, nil
 }
 
@@ -487,30 +449,46 @@ func (m *Manager) getMessengerDB() (*gorm.DB, error) {
 		return nil, errcode.TODO.Wrap(err)
 	}
 
-	var sqliteConn string
-	if dir == InMemoryDir {
-		sqliteConn = ":memory:"
-	} else {
-		sqliteConn = path.Join(dir, "messenger.sqlite")
-	}
-
-	cfg := &gorm.Config{
-		Logger:                                   zapgorm2.New(logger.Named("gorm")),
-		DisableForeignKeyConstraintWhenMigrating: true,
-	}
-	db, err := gorm.Open(sqlite.Open(sqliteConn), cfg)
+	key, err := m.GetAccountStorageKey()
 	if err != nil {
 		return nil, errcode.TODO.Wrap(err)
 	}
 
-	m.Node.Messenger.db = db
-	m.Node.Messenger.dbCleanup = func() {
-		sqlDB, _ := db.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
+	m.Node.Messenger.db, m.Node.Messenger.dbCleanup, err = accountutils.GetMessengerDBForPath(dir, key, logger)
+	if err != nil {
+		return nil, errcode.TODO.Wrap(err)
 	}
+
 	return m.Node.Messenger.db, nil
+}
+
+func (m *Manager) GetReplicationDB() (*gorm.DB, error) {
+	defer m.prepareForGetter()()
+
+	return m.getReplicationDB()
+}
+
+func (m *Manager) getReplicationDB() (*gorm.DB, error) {
+	if m.Node.Replication.db != nil {
+		return m.Node.Replication.db, nil
+	}
+
+	logger, err := m.getLogger()
+	if err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
+
+	dir, err := m.getDatastoreDir()
+	if err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
+
+	m.Node.Replication.db, m.Node.Replication.dbCleanup, err = accountutils.GetReplicationDBForPath(dir, logger)
+	if err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
+
+	return m.Node.Replication.db, nil
 }
 
 func (m *Manager) restoreMessengerDataFromExport() error {
@@ -543,7 +521,8 @@ func (m *Manager) restoreMessengerDataFromExport() error {
 
 	m.Node.Messenger.localDBState = &messengertypes.LocalDatabaseState{}
 
-	if err := bertymessenger.RestoreFromAccountExport(m.ctx, f, coreAPI, odb, m.Node.Messenger.localDBState, logger); err != nil {
+	ctx := m.getContext()
+	if err := bertymessenger.RestoreFromAccountExport(ctx, f, coreAPI, odb, m.Node.Messenger.localDBState, logger); err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}
 
@@ -605,6 +584,20 @@ func (m *Manager) getLocalMessengerServer() (messengertypes.MessengerServiceServ
 
 	lcmanager := m.getLifecycleManager()
 
+	pushPlatformToken := (*protocoltypes.PushServiceReceiver)(nil)
+	if m.Node.Protocol.PushPlatformToken != "" {
+		pushPlatformToken = &protocoltypes.PushServiceReceiver{}
+
+		data, err := base64.RawURLEncoding.DecodeString(m.Node.Protocol.PushPlatformToken)
+		if err != nil {
+			return nil, errcode.ErrDeserialization.Wrap(err)
+		}
+
+		if err := pushPlatformToken.Unmarshal(data); err != nil {
+			return nil, errcode.ErrDeserialization.Wrap(err)
+		}
+	}
+
 	// messenger server
 	opts := bertymessenger.Opts{
 		EnableGroupMonitor:  !m.Node.Messenger.DisableGroupMonitor,
@@ -614,6 +607,7 @@ func (m *Manager) getLocalMessengerServer() (messengertypes.MessengerServiceServ
 		LifeCycleManager:    lcmanager,
 		StateBackup:         m.Node.Messenger.localDBState,
 		Ring:                m.Logging.ring,
+		PlatformPushToken:   pushPlatformToken,
 	}
 	messengerServer, err := bertymessenger.New(protocolClient, &opts)
 	if err != nil {
@@ -630,24 +624,6 @@ func (m *Manager) getLocalMessengerServer() (messengertypes.MessengerServiceServ
 	m.Node.Messenger.server = messengerServer
 	m.initLogger.Debug("messenger server initialized and cached")
 	return m.Node.Messenger.server, nil
-}
-
-func getAuthTokenVerifier(secret, pk string) (*bertyprotocol.AuthTokenVerifier, error) {
-	rawSecret, err := base64.RawStdEncoding.DecodeString(secret)
-	if err != nil {
-		return nil, err
-	}
-
-	rawPK, err := base64.RawStdEncoding.DecodeString(pk)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rawPK) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("empty or invalid pk size")
-	}
-
-	return bertyprotocol.NewAuthTokenVerifier(rawSecret, rawPK)
 }
 
 func safeDefaultDisplayName() string {

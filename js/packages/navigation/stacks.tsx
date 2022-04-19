@@ -1,82 +1,91 @@
-import React, { useEffect, useState } from 'react'
-import { Linking } from 'react-native'
-import { CommonActions, useNavigation } from '@react-navigation/native'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Linking, Platform, TouchableOpacity } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import {
-	createStackNavigator,
-	HeaderStyleInterpolators,
-	StackCardInterpolationProps,
-	StackNavigationOptions,
-	TransitionSpecs,
-} from '@react-navigation/stack'
-
-import * as RawComponents from '@berty-tech/components'
+	createNativeStackNavigator,
+	NativeStackNavigationOptions,
+} from '@react-navigation/native-stack'
+import { CommonActions, NavigationProp, useNavigation } from '@react-navigation/native'
+import { Icon } from '@ui-kitten/components'
 import mapValues from 'lodash/mapValues'
-import { useMsgrContext } from '@berty-tech/store/hooks'
-import { Routes } from './types'
-import { MessengerAppState } from '@berty-tech/store/context'
-import { dispatch, navigate } from '@berty-tech/navigation/rootRef'
+import { useSelector } from 'react-redux'
 
-const CustomTransitionOptions: StackNavigationOptions = {
-	headerShown: false,
-	gestureEnabled: true,
-	gestureDirection: 'horizontal',
-	transitionSpec: {
-		open: TransitionSpecs.TransitionIOSSpec,
-		close: TransitionSpecs.TransitionIOSSpec,
-	},
-	headerStyleInterpolator: HeaderStyleInterpolators.forFade,
-	cardStyleInterpolator: ({ current, next, layouts }: StackCardInterpolationProps) => {
-		return {
-			cardStyle: {
-				transform: [
-					{
-						translateX: current.progress.interpolate({
-							inputRange: [0, 1],
-							outputRange: [layouts.screen.width, 0],
-						}),
-					},
-					{
-						scale: next
-							? next.progress.interpolate({
-									inputRange: [0, 1],
-									outputRange: [1, 0.9],
-							  })
-							: 1,
-					},
-				],
+import * as RawComponents from '@berty/components'
+import { useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
+import {
+	MESSENGER_APP_STATE,
+	selectAppState,
+	selectHandledLink,
+	setHandledLink,
+} from '@berty/redux/reducers/ui.reducer'
+import { useAppDispatch } from '@berty/hooks'
+
+import { ScreensParams } from './types'
+
+export const CustomTitleStyle: () => any = () => {
+	const [{ text }] = useStyles()
+
+	return [
+		text.size.large,
+		{
+			headerTitleStyle: {
+				...text.bold,
 			},
-			overlayStyle: {
-				opacity: current.progress.interpolate({
-					inputRange: [0, 1],
-					outputRange: [0, 0.5],
-				}),
-			},
-		}
-	},
+		},
+	]
 }
 
-const ModalScreenOptions: StackNavigationOptions = {
-	headerShown: false,
-	cardStyle: { backgroundColor: 'transparent' },
-	transitionSpec: {
-		open: TransitionSpecs.TransitionIOSSpec,
-		close: TransitionSpecs.TransitionIOSSpec,
-	},
-	headerStyleInterpolator: HeaderStyleInterpolators.forFade,
-	cardStyleInterpolator: ({ current }: StackCardInterpolationProps) => {
-		return {
-			cardStyle: {
-				opacity: current.progress,
-			},
-		}
-	},
+const ChatScreenOptions: (
+	additionalProps?: NativeStackNavigationOptions,
+) => NativeStackNavigationOptions = additionalProps => {
+	const colors = useThemeColor()
+	return {
+		headerStyle: {
+			backgroundColor: colors['main-background'],
+		},
+		headerTintColor: colors['main-text'],
+		headerBackTitleVisible: false,
+		headerShadowVisible: false,
+		...additionalProps,
+	}
 }
 
-function useLinking() {
+const BackgroundHeaderScreenOptions: (
+	additionalProps?: NativeStackNavigationOptions,
+) => NativeStackNavigationOptions = additionalProps => {
+	const colors = useThemeColor()
+	return {
+		headerStyle: {
+			backgroundColor: colors['background-header'],
+		},
+		headerTintColor: colors['reverted-main-text'],
+		headerBackTitleVisible: false,
+		headerShadowVisible: false,
+		...additionalProps,
+	}
+}
+
+const AltBackgroundHeaderScreenOptions: (
+	additionalProps?: NativeStackNavigationOptions,
+) => NativeStackNavigationOptions = additionalProps => {
+	const colors = useThemeColor()
+	return {
+		headerStyle: {
+			backgroundColor: colors['alt-secondary-background-header'],
+		},
+		headerTintColor: colors['reverted-main-text'],
+		headerBackTitleVisible: false,
+		headerShadowVisible: false,
+		...additionalProps,
+	}
+}
+
+function useLinking(): [string | null, unknown] {
 	const [url, setUrl] = useState<string | null>(null)
-	const [error, setError] = useState()
+	const [error, setError] = useState<unknown>()
 
-	async function initialUrl() {
+	const initialUrl = useCallback(async () => {
 		try {
 			const linkingUrl = await Linking.getInitialURL()
 			if (linkingUrl) {
@@ -85,10 +94,11 @@ function useLinking() {
 		} catch (ex) {
 			setError(ex)
 		}
-	}
+	}, [])
 
 	useEffect(() => {
-		function handleOpenUrl(ev: any) {
+		const handleOpenUrl = (ev: any) => {
+			console.log('handleOpenUrl:', ev.url)
 			setUrl(null)
 			setUrl(ev.url)
 		}
@@ -99,271 +109,610 @@ function useLinking() {
 		})
 
 		return () => Linking.removeEventListener('url', handleOpenUrl)
-	}, [])
+	}, [initialUrl])
 
 	return [url, error]
 }
 
-const DeepLinkBridge: React.FC = () => {
-	const navigation = useNavigation()
+const DeepLinkBridge: React.FC = React.memo(() => {
 	const [url, error] = useLinking()
+	const navigation = useNavigation<NavigationProp<ScreensParams>>()
+	const dispatch = useAppDispatch()
+	const handledLink = useSelector(selectHandledLink)
 
 	useEffect(() => {
-		if (url && !error && !(url as string).startsWith('berty://services-auth')) {
-			navigation.navigate('ManageDeepLink', { type: 'link', value: url })
+		if (!handledLink && url && !error && !(url as string).startsWith('berty://services-auth')) {
+			dispatch(setHandledLink(true))
+			navigation.navigate('Modals.ManageDeepLink', { type: 'link', value: url })
 		}
-	}, [url, error, navigation])
+	}, [dispatch, handledLink, error, navigation, url])
 
 	return null
-}
+})
 
 let Components: typeof RawComponents
 
 // @ts-ignore
-Components = mapValues(RawComponents, (SubComponents) =>
-	mapValues(SubComponents, (Component: React.FC) => (props: any) => (
-		<>
-			<DeepLinkBridge />
-			<Component {...props} />
-		</>
-	)),
+Components = mapValues(RawComponents, SubComponents =>
+	mapValues(
+		SubComponents,
+		(Component: React.FC): React.FC =>
+			React.memo(props => (
+				<>
+					{Platform.OS !== 'web' ? <DeepLinkBridge /> : null}
+					<Component {...props} />
+				</>
+			)),
+	),
 )
 
-const CreateGroupStack = createStackNavigator()
-export const CreateGroupNavigation: React.FC = () => {
-	const [members, setMembers] = useState([] as any[])
-	const setMember = (contact: any) => {
-		if (members.find((member) => member.publicKey === contact.publicKey)) {
-			return
-		}
-		setMembers([...members, contact])
-	}
-	const removeMember = (id: string) => {
-		const filtered = members.filter((member) => member.publicKey !== id)
-		if (filtered.length !== members.length) {
-			setMembers(filtered)
-		}
-	}
+const NavigationStack = createNativeStackNavigator<ScreensParams>()
 
-	return (
-		<CreateGroupStack.Navigator screenOptions={{ headerShown: false }}>
-			<CreateGroupStack.Screen
-				name={Routes.CreateGroup.CreateGroupAddMembers}
-				options={ModalScreenOptions}
-			>
-				{() => (
-					// should use setParams ? maybe, tis weird
-					<Components.Main.CreateGroupAddMembers
-						members={members}
-						onRemoveMember={removeMember}
-						onSetMember={setMember}
-					/>
-				)}
-			</CreateGroupStack.Screen>
-			<CreateGroupStack.Screen
-				name={Routes.CreateGroup.CreateGroupFinalize}
-				options={ModalScreenOptions}
-			>
-				{() => (
-					<Components.Main.CreateGroupFinalize members={members} onRemoveMember={removeMember} />
-				)}
-			</CreateGroupStack.Screen>
-		</CreateGroupStack.Navigator>
-	)
-}
-
-const NavigationStack = createStackNavigator()
-export const Navigation: React.FC = () => {
-	const context = useMsgrContext()
+export const Navigation: React.FC = React.memo(() => {
+	const appState = useSelector(selectAppState)
+	const colors = useThemeColor()
+	const [, { scaleSize }] = useStyles()
+	const { t }: any = useTranslation()
+	const { dispatch } = useNavigation()
 
 	useEffect(() => {
-		switch (context.appState) {
-			case MessengerAppState.GetStarted:
+		console.log('context app State', appState)
+		switch (appState) {
+			case MESSENGER_APP_STATE.READY:
 				dispatch(
 					CommonActions.reset({
-						routes: [{ name: Routes.Onboarding.GetStarted }],
+						routes: [{ name: 'Main.Home' }],
 					}),
 				)
 				return
-
-			case MessengerAppState.OnBoarding:
-				navigate(Routes.Onboarding.CreateAccount, {})
-				return
-
-			case MessengerAppState.Ready:
+			case MESSENGER_APP_STATE.PRE_READY:
 				dispatch(
 					CommonActions.reset({
-						routes: [{ name: Routes.Main.Home }],
+						routes: [{ name: 'Onboarding.SetupFinished' }],
 					}),
 				)
+				return
+			case MESSENGER_APP_STATE.GET_STARTED:
+				if (Platform.OS === 'web') {
+					dispatch(
+						CommonActions.reset({
+							routes: [{ name: 'Onboarding.GetStarted' }],
+						}),
+					)
+				}
 				return
 		}
-	}, [context.appState])
+	}, [appState, dispatch])
 
 	return (
 		<NavigationStack.Navigator
 			initialRouteName={
-				context.appState === MessengerAppState.Ready
-					? Routes.Main.Home
-					: Routes.Onboarding.GetStarted
+				appState === MESSENGER_APP_STATE.GET_STARTED ? 'Onboarding.GetStarted' : 'Main.Home'
 			}
-			screenOptions={CustomTransitionOptions}
+			screenOptions={{
+				headerLeft:
+					Platform.OS === 'web'
+						? props => (
+								<TouchableOpacity
+									style={{ justifyContent: 'center' }}
+									onPress={() => dispatch(CommonActions.goBack())}
+								>
+									<Icon name='arrow-back' width={24} height={24} fill={props.tintColor} />
+								</TouchableOpacity>
+						  )
+						: undefined,
+			}}
 		>
+			{/* OnBoarding */}
 			<NavigationStack.Screen
-				name={Routes.Main.ContactRequest}
-				component={Components.Main.ContactRequest}
-				options={ModalScreenOptions}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Main.Scan}
-				component={Components.Main.Scan}
-				options={ModalScreenOptions}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Main.NetworkOptions}
-				component={Components.Main.NetworkOptions}
-				options={ModalScreenOptions}
-			/>
-			<NavigationStack.Screen name={Routes.Chat.OneToOne} component={Components.Chat.OneToOne} />
-			<NavigationStack.Screen name={Routes.Chat.Group} component={Components.Chat.MultiMember} />
-			<NavigationStack.Screen
-				name={Routes.Chat.OneToOneSettings}
-				component={Components.Chat.OneToOneSettings}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Chat.ContactSettings}
-				component={Components.Chat.ContactSettings}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Chat.MultiMemberSettings}
-				component={Components.Chat.MultiMemberSettings}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Chat.MultiMemberSettingsAddMembers}
-				component={Components.Chat.MultiMemberSettingsAddMembers}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Chat.MultiMemberQR}
-				component={Components.Chat.MultiMemberQR}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Chat.ReplicateGroupSettings}
-				component={Components.Chat.ReplicateGroupSettings}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Chat.SharedMedias}
-				component={Components.Chat.SharedMedias}
-			/>
-			<NavigationStack.Screen
-				name={Routes.CreateGroup.CreateGroupAddMembers}
-				component={CreateGroupNavigation}
-				options={ModalScreenOptions}
-			/>
-			<NavigationStack.Screen name={Routes.Main.Home} component={Components.Main.Home} />
-			<NavigationStack.Screen
-				name={Routes.Settings.MyBertyId}
-				component={Components.Settings.MyBertyId}
-				options={ModalScreenOptions}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.EditProfile}
-				component={Components.Settings.EditProfile}
-				options={ModalScreenOptions}
-			/>
-			<NavigationStack.Screen name={Routes.Settings.Home} component={Components.Settings.Home} />
-			<NavigationStack.Screen
-				name={Routes.Settings.AppUpdates}
-				component={Components.Settings.AppUpdates}
-			/>
-			<NavigationStack.Screen name={Routes.Settings.Help} component={Components.Settings.Help} />
-			<NavigationStack.Screen
-				name={Routes.Settings.FakeData}
-				component={Components.Settings.FakeData}
-			/>
-			<NavigationStack.Screen name={Routes.Settings.Mode} component={Components.Settings.Mode} />
-			<NavigationStack.Screen
-				name={Routes.Settings.BlockedContacts}
-				component={Components.Settings.BlockedContacts}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.Notifications}
-				component={Components.Settings.Notifications}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.Bluetooth}
-				component={Components.Settings.Bluetooth}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.ServicesAuth}
-				component={Components.Settings.ServicesAuth}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.AboutBerty}
-				component={Components.Settings.AboutBerty}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.TermsOfUse}
-				component={Components.Settings.TermsOfUse}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.DevTools}
-				component={Components.Settings.DevTools}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.AddDevConversations}
-				component={Components.Settings.AddDevConversations}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.SystemInfo}
-				component={Components.Settings.SystemInfo}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.IpfsWebUI}
-				component={Components.Settings.IpfsWebUI}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.DevText}
-				component={Components.Settings.DevText}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Settings.NetworkMap}
-				component={Components.Settings.NetworkMap}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Onboarding.GetStarted}
+				name={'Onboarding.GetStarted'}
 				component={Components.Onboarding.GetStarted}
+				options={{ headerShown: false, title: t('onboarding.getstarted.screenTitle') }}
 			/>
 			<NavigationStack.Screen
-				name={Routes.Onboarding.ChoosePreset}
-				component={Components.Onboarding.ChoosePreset}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Onboarding.CreateAccount}
+				name={'Onboarding.CreateAccount'}
 				component={Components.Onboarding.CreateAccount}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['background-header'],
+					},
+					headerTintColor: colors['reverted-main-text'],
+					headerBackTitleVisible: false,
+					title: t('onboarding.getstarted.create-button'),
+					headerTitle: () => <></>,
+				}}
 			/>
 			<NavigationStack.Screen
-				name={Routes.Onboarding.ServicesAuth}
-				component={Components.Onboarding.ServicesAuth}
-			/>
-			<NavigationStack.Screen
-				name={Routes.Onboarding.SetupFinished}
+				name={'Onboarding.SetupFinished'}
 				component={Components.Onboarding.SetupFinished}
+				options={{ headerShown: false, title: t('onboarding.setup-finished.title') }}
 			/>
 			<NavigationStack.Screen
-				name={Routes.Modals.DeleteAccount}
-				component={Components.Modals.DeleteAccount}
-				options={ModalScreenOptions}
+				name={'Onboarding.CustomModeSettings'}
+				component={Components.Onboarding.CustomModeSettings}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['background-header'],
+					},
+					headerTintColor: colors['reverted-main-text'],
+					headerBackTitleVisible: false,
+					title: t('onboarding.custom-mode.summary.screenTitle'),
+					headerTitle: () => <></>,
+				}}
 			/>
 			<NavigationStack.Screen
-				name={Routes.Modals.ManageDeepLink}
+				name={'Onboarding.WebViews'}
+				component={Components.Onboarding.WebViews}
+				options={{
+					title: t('onboarding.web-views.title'),
+					headerTitle: () => <></>,
+					headerBackTitle: '',
+					headerTintColor: colors['main-text'],
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Onboarding.DefaultMode'}
+				component={Components.Onboarding.DefaultMode}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['background-header'],
+					},
+					headerTintColor: colors['reverted-main-text'],
+					headerBackTitleVisible: false,
+					title: t('onboarding.default-mode.summary.screenTitle'),
+					headerTitle: () => <></>,
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Onboarding.CustomMode'}
+				component={Components.Onboarding.CustomMode}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['background-header'],
+					},
+					headerTintColor: colors['reverted-main-text'],
+					headerBackTitleVisible: false,
+					title: t('onboarding.custom-mode.summary.screenTitle'),
+					headerTitle: () => <></>,
+				}}
+			/>
+			{/* Main */}
+			<NavigationStack.Screen
+				name={'Main.Home'}
+				component={Components.Main.Home}
+				options={{
+					headerShown: false,
+					title: t('main.home.title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Main.ContactRequest'}
+				component={Components.Main.ContactRequest}
+				options={{
+					headerShown: false,
+					title: t('main.home.requests.page-title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Main.Permissions'}
+				component={Components.Main.Permissions}
+				options={{
+					headerShown: false,
+					presentation: 'formSheet',
+					title: t('permission.request.title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Main.BlePermission'}
+				component={Components.Main.BlePermission}
+				options={{
+					headerShown: false,
+					presentation: 'formSheet',
+					title: t('permission.proximity.title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Main.Share'}
+				component={Components.Main.ShareModal}
+				options={BackgroundHeaderScreenOptions({
+					title: t('main.home.title'),
+					headerTitle: () => <></>,
+					presentation: 'formSheet',
+				})}
+			/>
+			{/* CreateGroup */}
+			<NavigationStack.Screen
+				name={'Main.CreateGroupAddMembers'}
+				component={Components.Main.CreateGroupAddMembers}
+				options={BackgroundHeaderScreenOptions({
+					title: t('main.home.create-group.title'),
+					headerRight: () => (
+						<Icon
+							name='users'
+							pack='custom'
+							width={35 * scaleSize}
+							height={35 * scaleSize}
+							fill={colors['reverted-main-text']}
+						/>
+					),
+					presentation: 'formSheet',
+					...CustomTitleStyle(),
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Main.CreateGroupFinalize'}
+				component={Components.Main.CreateGroupFinalize}
+				options={BackgroundHeaderScreenOptions({
+					title: t('main.home.create-group.title'),
+					headerRight: () => (
+						<Icon
+							name='users'
+							pack='custom'
+							width={35 * scaleSize}
+							height={35 * scaleSize}
+							fill={colors['reverted-main-text']}
+						/>
+					),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			{/* Chat */}
+			<NavigationStack.Screen
+				name={'Chat.OneToOne'}
+				component={Components.Chat.OneToOne}
+				options={ChatScreenOptions({
+					...CustomTitleStyle(),
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Chat.Group'}
+				component={Components.Chat.MultiMember}
+				options={ChatScreenOptions({
+					...ChatScreenOptions(),
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Chat.OneToOneSettings'}
+				component={Components.Chat.OneToOneSettings}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.one-to-one-settings.title'),
+					headerTitle: () => <></>,
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Chat.ContactSettings'}
+				component={Components.Chat.ContactSettings}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.one-to-one-settings.title'),
+					headerTitle: () => <></>,
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Group.MultiMemberSettings'}
+				component={Components.Chat.MultiMemberSettings}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.multi-member-settings.title'),
+					headerTitle: () => <></>,
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Group.ChatSettingsMemberDetail'}
+				component={Components.Chat.ChatSettingsMemberDetail}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.multi-member-settings.title'),
+					headerTitle: () => <></>,
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Chat.MultiMemberQR'}
+				component={Components.Chat.MultiMemberQR}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.multi-member-qr.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Group.MultiMemberSettingsAddMembers'}
+				component={Components.Chat.MultiMemberSettingsAddMembers}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.add-members.members'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Chat.ReplicateGroupSettings'}
+				component={Components.Chat.ReplicateGroupSettings}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.replicate-group-settings.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Chat.SharedMedias'}
+				component={Components.Chat.SharedMedias}
+				options={BackgroundHeaderScreenOptions({
+					title: t('chat.shared-medias.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			{/* Settings */}
+			<NavigationStack.Screen
+				name={'Settings.Home'}
+				component={Components.Settings.Home}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+
+					headerTintColor: colors['main-text'],
+					headerBackTitleVisible: false,
+					title: t('settings.home.title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Network'}
+				component={Components.Settings.Network}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					headerTintColor: colors['main-text'],
+					headerBackTitleVisible: false,
+					title: t('settings.network.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Notifications'}
+				component={Components.Settings.Notifications}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.notifications.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.ContactAndConversations'}
+				component={Components.Settings.ContactAndConversations}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.contact-convs.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Appearance'}
+				component={Components.Settings.Appearance}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.appearance.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.ThemeEditor'}
+				component={Components.Settings.ThemeEditor}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['alt-secondary-background-header'],
+					},
+					headerTintColor: colors['reverted-main-text'],
+					title: t('settings.appearance.theme-editor.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.DevicesAndBackup'}
+				component={Components.Settings.DevicesAndBackup}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.devices-backup.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Security'}
+				component={Components.Settings.Security}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.security.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Accounts'}
+				component={Components.Settings.Accounts}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.accounts.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.AboutBerty'}
+				component={Components.Settings.AboutBerty}
+				options={{
+					headerStyle: {
+						backgroundColor: colors['secondary-background'],
+					},
+					title: t('settings.about.title'),
+					presentation: 'formSheet',
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.MyBertyId'}
+				component={Components.Settings.MyBertyId}
+				options={BackgroundHeaderScreenOptions({
+					title: t('settings.my-berty-ID.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.TermsOfUse'}
+				component={Components.Settings.TermsOfUse}
+				options={BackgroundHeaderScreenOptions({
+					title: t('settings.about.terms-of-use'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.NetworkMap'}
+				component={Components.Settings.NetworkMap}
+				options={AltBackgroundHeaderScreenOptions({
+					title: t('settings.network-map.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.ServicesAuth'}
+				component={Components.Settings.ServicesAuth}
+				options={BackgroundHeaderScreenOptions({
+					title: t('settings.services-auth.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.DeleteAccount'}
+				component={Components.Settings.DeleteAccount}
+				options={{
+					headerShown: false,
+					presentation: 'formSheet',
+					title: t('settings.accounts.delete-title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.DevTools'}
+				component={Components.Settings.DevTools}
+				options={AltBackgroundHeaderScreenOptions({
+					title: t('settings.devtools.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.FakeData'}
+				component={Components.Settings.FakeData}
+				options={AltBackgroundHeaderScreenOptions({
+					title: t('settings.fake-data.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+
+			<NavigationStack.Screen
+				name={'Settings.SystemInfo'}
+				component={Components.Settings.SystemInfo}
+				options={AltBackgroundHeaderScreenOptions({
+					title: t('settings.system-info.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.AddDevConversations'}
+				component={Components.Settings.AddDevConversations}
+				options={AltBackgroundHeaderScreenOptions({
+					title: t('settings.add-dev-conversations.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.IpfsWebUI'}
+				component={Components.Settings.IpfsWebUI}
+				options={AltBackgroundHeaderScreenOptions({
+					title: t('settings.ipfs-webui.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.DevText'}
+				component={Components.Settings.DevText}
+				options={AltBackgroundHeaderScreenOptions({
+					title: '',
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.BertyServices'}
+				component={Components.Settings.BertyServices}
+				options={{
+					headerShown: false,
+					presentation: 'formSheet',
+					title: t('settings.berty-services.title'),
+				}}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Roadmap'}
+				component={Components.Settings.Roadmap}
+				options={BackgroundHeaderScreenOptions({
+					title: t('settings.roadmap.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.Faq'}
+				component={Components.Settings.Faq}
+				options={BackgroundHeaderScreenOptions({
+					title: t('settings.faq.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			<NavigationStack.Screen
+				name={'Settings.PrivacyPolicy'}
+				component={Components.Settings.PrivacyPolicy}
+				options={BackgroundHeaderScreenOptions({
+					title: t('settings.privacy-policy.title'),
+					...CustomTitleStyle(),
+					presentation: 'formSheet',
+				})}
+			/>
+			{/* Modals */}
+			<NavigationStack.Screen
+				name={'Modals.ManageDeepLink'}
 				component={Components.Modals.ManageDeepLink}
-				options={ModalScreenOptions}
+				options={{
+					presentation: 'containedTransparentModal',
+					animation: 'fade',
+					headerShown: false,
+				}}
 			/>
 			<NavigationStack.Screen
-				name={Routes.Modals.ImageView}
+				name={'Modals.ImageView'}
 				component={Components.Modals.ImageView}
-				options={{ ...ModalScreenOptions, gestureEnabled: false }}
+				options={{
+					presentation: 'containedTransparentModal',
+					headerShown: false,
+				}}
 			/>
 		</NavigationStack.Navigator>
 	)
-}
+})

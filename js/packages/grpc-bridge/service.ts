@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as pbjs from 'protobufjs'
 import { ServiceClientType } from './welsh-clients.gen'
 
@@ -39,7 +40,7 @@ const createStreamMethod = <M extends pbjs.Method>(method: M, streamCall: unknow
 		const req = requestType?.encode(payload).finish()
 		const stream = await streamCall(method, req, metadata)
 		return {
-			onMessage: (listener) => {
+			onMessage: listener => {
 				stream.onMessage((buf, err) => {
 					if (err) {
 						listener(null, err)
@@ -50,11 +51,11 @@ const createStreamMethod = <M extends pbjs.Method>(method: M, streamCall: unknow
 						const res = responseType.decode(buf)
 						listener(res, null)
 					} catch (e) {
-						console.error('invalid response type', e)
+						console.warn('invalid response type', e)
 					}
 				})
 			},
-			emit: async (payload) => {
+			emit: async payload => {
 				const req = requestType.encode(payload).finish()
 				return stream.emit(req)
 			},
@@ -71,7 +72,7 @@ const createStreamMethodList = <S extends typeof pbjs.rpc.Service>(
 	middleware: unknown,
 ) => {
 	const methods = {}
-	Object.keys(service.methods || {}).forEach((key) => {
+	Object.keys(service.methods || {}).forEach(key => {
 		const method = service.methods[key]
 		if (method.responseStream || method.requestStream) {
 			const lkey = lowerFirst(key)

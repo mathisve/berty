@@ -1,15 +1,21 @@
 import React, { useState } from 'react'
-import { View, TouchableOpacity, TextInput, Text as TextNative } from 'react-native'
+import { View, TouchableOpacity, TextInput } from 'react-native'
 import { Buffer } from 'buffer'
-import { Text, Icon } from '@ui-kitten/components'
-import { useNavigation } from '@react-navigation/native'
+import { Icon } from '@ui-kitten/components'
+import { CommonActions, useNavigation } from '@react-navigation/native'
 import { useTranslation } from 'react-i18next'
-import { useStyles } from '@berty-tech/styles'
+
+import { useStyles } from '@berty/styles'
+import messengerMethodsHooks from '@berty/store/methods'
+import { dispatch as navDispatch } from '@berty/navigation/rootRef'
+import { useThemeColor } from '@berty/store'
+import { useAppDispatch, useConversation } from '@berty/hooks'
+
 import { TabBar } from '../shared-components/TabBar'
 import { FingerprintContent } from '../shared-components/FingerprintContent'
 import InvalidScan from './InvalidScan'
-import messengerMethodsHooks from '@berty-tech/store/methods'
 import { MultiMemberAvatar } from '../avatars'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const useStylesModal = () => {
 	const [{ width, border, height, opacity }] = useStyles()
@@ -43,7 +49,9 @@ const SelectedContent = ({
 			return <FingerprintContent seed={pubKey} isEncrypted={isEncrypted} />
 		default:
 			return (
-				<Text style={[padding.horizontal.medium]}>Error: Unknown content name "{contentName}"</Text>
+				<UnifiedText style={[padding.horizontal.medium]}>
+					Error: Unknown content name "{contentName}"
+				</UnifiedText>
 			)
 	}
 }
@@ -57,12 +65,14 @@ export const ManageGroupInvitation: React.FC<{
 }> = ({ link, type, displayName, publicKey, isPassword }) => {
 	const navigation = useNavigation()
 	const { call: joinConversation, done, error } = messengerMethodsHooks.useConversationJoin()
-	const [
-		{ row, text, column, color, flex, absolute, padding, background, border, margin },
-	] = useStyles()
+	const [{ row, text, column, flex, absolute, padding, border, margin }] = useStyles()
+	const colors = useThemeColor()
 	const [selectedContent, setSelectedContent] = useState('fingerprint')
 	const _styles = useStylesModal()
-	const { t } = useTranslation()
+	const { t }: any = useTranslation()
+	const dispatch = useAppDispatch()
+	const { dispatch: navigationDispatch } = useNavigation()
+	const convId = useConversation(publicKey)?.publicKey
 
 	const [password, setPassword] = useState('')
 
@@ -70,11 +80,28 @@ export const ManageGroupInvitation: React.FC<{
 
 	React.useEffect(() => {
 		if (done && !error) {
-			navigation.goBack()
-			navigation.navigate('Main.Home')
+			navDispatch(
+				CommonActions.reset({
+					routes: [{ name: 'Main.Home' }],
+				}),
+			)
 		}
-	}, [done, error, navigation])
-
+	}, [done, error, dispatch])
+	if (convId) {
+		navigationDispatch(
+			CommonActions.reset({
+				routes: [
+					{ name: 'Main.Home' },
+					{
+						name: 'Chat.Group',
+						params: {
+							convId,
+						},
+					},
+				],
+			}),
+		)
+	}
 	if (error) {
 		return <InvalidScan type={type} error={error} />
 	}
@@ -85,23 +112,22 @@ export const ManageGroupInvitation: React.FC<{
 		>
 			<View
 				style={[
-					background.white,
 					padding.horizontal.medium,
 					padding.bottom.medium,
 					border.radius.large,
-					{ width: '100%' },
+					{ width: '100%', backgroundColor: colors['main-background'] },
 				]}
 			>
 				<View style={[absolute.scale({ top: -50 }), row.item.justify]}>
 					<MultiMemberAvatar
 						publicKey={publicKey}
 						fallbackNameSeed={displayName}
-						style={[border.shadow.big, row.center] as any}
+						style={[border.shadow.big, row.center, { shadowColor: colors.shadow }] as any}
 						size={100}
 					/>
 				</View>
 				<View style={[padding.top.scale(55)]}>
-					<Text style={{ textAlign: 'center' }}>{displayName}</Text>
+					<UnifiedText style={{ textAlign: 'center' }}>{displayName}</UnifiedText>
 					<TabBar
 						tabs={[
 							{
@@ -143,16 +169,20 @@ export const ManageGroupInvitation: React.FC<{
 								margin.top.medium,
 							]}
 						>
-							<Icon name='info-outline' fill={color.blue} width={15} height={15} />
-							<TextNative
+							<Icon name='info-outline' fill={colors['background-header']} width={15} height={15} />
+							<UnifiedText
 								style={[
-									{ fontFamily: 'Open Sans', color: color.blue, paddingLeft: 5, fontSize: 13 },
+									{
+										color: colors['background-header'],
+										paddingLeft: 5,
+									},
+									text.size.small,
 									text.align.center,
-									text.bold.small,
+									text.light,
 								]}
 							>
-								Enter the group password
-							</TextNative>
+								{t('modals.group-invitation.password-label')}
+							</UnifiedText>
 						</View>
 						<View
 							style={[
@@ -161,7 +191,7 @@ export const ManageGroupInvitation: React.FC<{
 								margin.top.medium,
 								row.fill,
 								padding.vertical.scale(12),
-								{ backgroundColor: '#E8E9FC99' },
+								{ backgroundColor: colors['negative-asset'] },
 							]}
 						>
 							<TextInput
@@ -170,8 +200,8 @@ export const ManageGroupInvitation: React.FC<{
 								onChangeText={setPassword}
 								autoCapitalize='none'
 								editable={true}
-								style={[{ fontFamily: 'Open Sans' }, text.bold.small, { width: '100%' }]}
-								placeholder='Password...'
+								style={[{ fontFamily: 'Open Sans' }, text.light, { width: '100%' }]}
+								placeholder={t('modals.group-invitation.password-placeholder')}
 							/>
 						</View>
 					</View>
@@ -185,24 +215,36 @@ export const ManageGroupInvitation: React.FC<{
 						}}
 						style={[
 							flex.medium,
-							background.light.blue,
 							padding.vertical.scale(12),
 							border.radius.small,
+							{ backgroundColor: colors['positive-asset'] },
 						]}
 					>
-						<Text style={[text.color.blue, { textAlign: 'center' }]}>JOIN THIS GROUP</Text>
+						<UnifiedText
+							style={{
+								textAlign: 'center',
+								color: colors['background-header'],
+								textTransform: 'uppercase',
+							}}
+						>
+							{t('modals.group-invitation.join')}
+						</UnifiedText>
 					</TouchableOpacity>
 				</View>
 			</View>
 			<TouchableOpacity
 				style={[
-					background.white,
 					padding.vertical.medium,
 					border.shadow.medium,
 					row.item.justify,
 					column.justify,
 					_styles.closeRequest,
-					{ position: 'absolute', bottom: '2%' },
+					{
+						position: 'absolute',
+						bottom: '2%',
+						backgroundColor: colors['main-background'],
+						shadowColor: colors.shadow,
+					},
 				]}
 				onPress={navigation.goBack}
 			>
@@ -211,11 +253,9 @@ export const ManageGroupInvitation: React.FC<{
 					name='close-outline'
 					width={25}
 					height={25}
-					fill={color.grey}
+					fill={colors['secondary-text']}
 				/>
 			</TouchableOpacity>
 		</View>
 	)
 }
-
-export default ManageGroupInvitation

@@ -1,39 +1,32 @@
 import React, { useEffect, useState } from 'react'
-import {
-	ScrollView,
-	View,
-	Text as TextNative,
-	ActivityIndicator,
-	TouchableOpacity,
-	StatusBar,
-} from 'react-native'
-import { Layout, Text, Icon } from '@ui-kitten/components'
-import { Translation } from 'react-i18next'
+import { ScrollView, View, ActivityIndicator, TouchableOpacity, StatusBar } from 'react-native'
+import { Layout, Icon } from '@ui-kitten/components'
+import { useTranslation } from 'react-i18next'
 
-import { useStyles } from '@berty-tech/styles'
-import { useNavigation } from '@berty-tech/navigation'
-import { protocolMethodsHooks } from '@berty-tech/store/methods'
-import beapi from '@berty-tech/api'
+import beapi from '@berty/api'
+import { ScreenFC } from '@berty/navigation'
+import { useStyles } from '@berty/styles'
+import { useThemeColor, pbDateToNum } from '@berty/store'
+import { protocolMethodsHooks } from '@berty/store/methods'
 
-import { HeaderSettings } from '../shared-components/Header'
 import { usePrevious } from '../hooks'
-import { pbDateToNum } from '../helpers'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
 const PeerItem: React.FC<{ item: beapi.protocol.PeerList.IPeer; highlighted: boolean }> = ({
 	item,
 	highlighted,
 }) => {
 	const { id, minLatency, isActive, features } = item
-	const [{ padding, border, color, text, row, height, width }] = useStyles()
+	const [{ padding, border, text, row, height, width }] = useStyles()
+	const colors = useThemeColor()
 	const [isDropdown, setIsDropdown] = useState(false)
 
 	return (
-		<View style={[border.scale(1), border.color.light.grey, border.radius.small]}>
+		<View style={[border.scale(1), border.radius.small, { borderColor: colors['secondary-text'] }]}>
 			<View
 				style={[
 					{ justifyContent: 'space-evenly', flexDirection: 'row', alignItems: 'center' },
-					highlighted && { backgroundColor: color.light.yellow },
+					highlighted && { backgroundColor: colors['positive-asset'] },
 					padding.small,
 				]}
 			>
@@ -43,16 +36,22 @@ const PeerItem: React.FC<{ item: beapi.protocol.PeerList.IPeer; highlighted: boo
 							width(12),
 							height(12),
 							border.radius.scale(6),
-							{ backgroundColor: isActive ? color.green : color.red },
+							{ backgroundColor: isActive ? colors['background-header'] : colors['warning-asset'] },
 						]}
 					/>
 				</View>
 				<View style={[row.center, { flex: 2 }]}>
-					<Icon name='earth' pack='custom' fill={color.dark.grey} width={25} height={25} />
+					<Icon
+						name='earth'
+						pack='custom'
+						fill={colors['alt-secondary-background-header']}
+						width={25}
+						height={25}
+					/>
 				</View>
 				<View style={[row.center, { flex: 2 }]}>
 					{features?.length
-						? features.map((value) => {
+						? features.map(value => {
 								let name, pack, fill
 								switch (value) {
 									case beapi.protocol.PeerList.Feature.BertyFeature:
@@ -62,7 +61,7 @@ const PeerItem: React.FC<{ item: beapi.protocol.PeerList.IPeer; highlighted: boo
 									case beapi.protocol.PeerList.Feature.QuicFeature:
 										name = 'network'
 										pack = 'custom'
-										fill = color.dark.grey
+										fill = colors['alt-secondary-background-header']
 										break
 								}
 								return (
@@ -78,20 +77,25 @@ const PeerItem: React.FC<{ item: beapi.protocol.PeerList.IPeer; highlighted: boo
 						  })
 						: null}
 				</View>
-				<Text style={[text.align.center, { flex: 4 }]}>{id?.substr(0, 9)}</Text>
-				<Text numberOfLines={1} style={[text.align.center, { flex: 3 }]}>
+				<UnifiedText style={[text.align.center, { flex: 4 }]}>{id?.substring(0, 9)}</UnifiedText>
+				<UnifiedText numberOfLines={1} style={[text.align.center, { flex: 3 }]}>
 					{minLatency ? minLatency + 'ms' : '?'}
-				</Text>
+				</UnifiedText>
 				<TouchableOpacity
 					style={[row.center, { flex: 1 }]}
 					onPress={() => setIsDropdown(!isDropdown)}
 				>
-					<Icon name='arrow-ios-downward' fill={color.dark.grey} width={25} height={25} />
+					<Icon
+						name='arrow-ios-downward'
+						fill={colors['alt-secondary-background-header']}
+						width={25}
+						height={25}
+					/>
 				</TouchableOpacity>
 			</View>
 			{isDropdown && (
 				<View style={[padding.small]}>
-					<Text>{JSON.stringify(item, null, 2)}</Text>
+					<UnifiedText>{JSON.stringify(item, null, 2)}</UnifiedText>
 				</View>
 			)}
 		</View>
@@ -111,8 +115,8 @@ function getPeersTypes(peers: beapi.protocol.PeerList.IPeer[] | null) {
 		ble: 0,
 	}
 
-	peers?.forEach((value) => {
-		value?.features?.forEach((feature) => {
+	peers?.forEach(value => {
+		value?.features?.forEach(feature => {
 			switch (feature) {
 				case beapi.protocol.PeerList.Feature.BertyFeature:
 					peersTypes.berty += 1
@@ -121,7 +125,6 @@ function getPeersTypes(peers: beapi.protocol.PeerList.IPeer[] | null) {
 					peersTypes.quic += 1
 					break
 			}
-			console.log('heere', feature)
 		})
 	})
 
@@ -129,7 +132,9 @@ function getPeersTypes(peers: beapi.protocol.PeerList.IPeer[] | null) {
 }
 
 const NetworkMapBody: React.FC<{ peers: beapi.protocol.PeerList.IReply | null }> = ({ peers }) => {
-	const [{ margin, text, color }] = useStyles()
+	const [{ margin, text }] = useStyles()
+	const colors = useThemeColor()
+	const { t }: any = useTranslation()
 	const [sortPeers, setSortPeers] = useState<beapi.protocol.PeerList.IPeer[] | null>(null)
 	const [typesPeers, setTypesPeers] = useState<PeersTypes | null>(null)
 
@@ -147,107 +152,104 @@ const NetworkMapBody: React.FC<{ peers: beapi.protocol.PeerList.IReply | null }>
 	}, [peers])
 
 	return (
-		<Translation>
-			{(t) => (
-				<View style={[{ flexDirection: 'column' }]}>
-					{sortPeers?.length ? (
-						<View>
-							<View style={[margin.medium]}>
-								<TextNative
+		<View style={[{ flexDirection: 'column' }]}>
+			{sortPeers?.length ? (
+				<View>
+					<View style={[margin.medium]}>
+						<UnifiedText
+							style={[
+								{ color: colors['alt-secondary-background-header'] },
+								text.bold,
+								text.size.large,
+							]}
+						>
+							{`${t('settings.network-map.online-peers')} ${sortPeers.length}`}
+						</UnifiedText>
+						<View
+							style={{
+								flexDirection: 'row',
+								alignItems: 'center',
+								justifyContent: 'space-around',
+								marginTop: 15,
+							}}
+						>
+							<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+								<Icon name='berty' pack='custom' width={25} height={25} />
+								<UnifiedText
 									style={[
-										{ fontFamily: 'Open Sans' },
-										text.bold.medium,
+										{ color: colors['alt-secondary-background-header'] },
+										text.bold,
 										text.size.large,
-										text.color.dark.grey,
+										margin.left.tiny,
 									]}
 								>
-									{`${t('settings.network-map.online-peers')} ${sortPeers.length}`}
-								</TextNative>
-								<View
-									style={{
-										flexDirection: 'row',
-										alignItems: 'center',
-										justifyContent: 'space-around',
-										marginTop: 15,
-									}}
-								>
-									<View style={{ flexDirection: 'row', alignItems: 'center' }}>
-										<Icon name='berty' pack='custom' width={25} height={25} />
-										<TextNative
-											style={[
-												{ fontFamily: 'Open Sans' },
-												text.bold.medium,
-												text.size.large,
-												text.color.dark.grey,
-												margin.left.tiny,
-											]}
-										>
-											{typesPeers?.berty}
-										</TextNative>
-									</View>
-									<View style={{ flexDirection: 'row', alignItems: 'center' }}>
-										<Icon
-											name='network'
-											pack='custom'
-											fill={color.dark.grey}
-											width={25}
-											height={25}
-										/>
-										<TextNative
-											style={[
-												{ fontFamily: 'Open Sans' },
-												text.bold.medium,
-												text.size.large,
-												text.color.dark.grey,
-												margin.left.tiny,
-											]}
-										>
-											{typesPeers?.quic}
-										</TextNative>
-									</View>
-									<View style={{ flexDirection: 'row', alignItems: 'center' }}>
-										<Icon name='bluetooth' fill={color.dark.grey} width={25} height={25} />
-										<TextNative
-											style={[
-												{ fontFamily: 'Open Sans' },
-												text.bold.medium,
-												text.size.large,
-												text.color.dark.grey,
-												margin.left.tiny,
-											]}
-										>
-											{typesPeers?.ble}
-										</TextNative>
-									</View>
-								</View>
+									{typesPeers?.berty}
+								</UnifiedText>
 							</View>
-							<>
-								{sortPeers.map((value) => {
-									const elem = prevPeers?.find((v) => value.id?.toString() === v.id?.toString())
-									return (
-										<PeerItem
-											key={value.id}
-											item={value}
-											highlighted={elem ? false : prevPeers ? true : false}
-										/>
-									)
-								})}
-							</>
+							<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+								<Icon
+									name='network'
+									pack='custom'
+									fill={colors['alt-secondary-background-header']}
+									width={25}
+									height={25}
+								/>
+								<UnifiedText
+									style={[
+										{ color: colors['alt-secondary-background-header'] },
+										text.bold,
+										text.size.large,
+										margin.left.tiny,
+									]}
+								>
+									{typesPeers?.quic}
+								</UnifiedText>
+							</View>
+							<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+								<Icon
+									name='bluetooth'
+									fill={colors['alt-secondary-background-header']}
+									width={25}
+									height={25}
+								/>
+								<UnifiedText
+									style={[
+										{ color: colors['alt-secondary-background-header'] },
+										text.bold,
+										text.size.large,
+										margin.left.tiny,
+									]}
+								>
+									{typesPeers?.ble}
+								</UnifiedText>
+							</View>
 						</View>
-					) : (
-						<View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>
-							<ActivityIndicator size='large' />
-						</View>
-					)}
+					</View>
+					<>
+						{sortPeers.map(value => {
+							const elem = prevPeers?.find(v => value.id?.toString() === v.id?.toString())
+							return (
+								<PeerItem
+									key={value.id}
+									item={value}
+									highlighted={elem ? false : prevPeers ? true : false}
+								/>
+							)
+						})}
+					</>
+				</View>
+			) : (
+				<View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>
+					<ActivityIndicator size='large' />
 				</View>
 			)}
-		</Translation>
+		</View>
 	)
 }
 
-export const NetworkMap = () => {
-	const { goBack } = useNavigation()
-	const [{ background, flex, color, padding }] = useStyles()
+export const NetworkMap: ScreenFC<'Settings.NetworkMap'> = ({ navigation }) => {
+	const colors = useThemeColor()
+	const [{}, { scaleSize }] = useStyles()
 	const { reply: peers = {}, call, called } = protocolMethodsHooks.usePeerList()
 
 	useEffect(() => {
@@ -256,25 +258,30 @@ export const NetworkMap = () => {
 		}
 	}, [called, call])
 
+	React.useLayoutEffect(() => {
+		navigation.setOptions({
+			headerRight: () => (
+				<TouchableOpacity onPress={() => call()}>
+					<Icon
+						name='refresh-outline'
+						width={30 * scaleSize}
+						height={30 * scaleSize}
+						fill={colors['reverted-main-text']}
+					/>
+				</TouchableOpacity>
+			),
+		})
+	})
+
 	return (
-		<Translation>
-			{(t) => (
-				<Layout style={[background.white, flex.tiny]}>
-					<SwipeNavRecognizer>
-						<StatusBar backgroundColor={color.dark.grey} barStyle='light-content' />
-						<ScrollView bounces={false} contentContainerStyle={padding.bottom.scale(30)}>
-							<HeaderSettings
-								title={t('settings.network-map.title')}
-								bgColor={color.dark.grey}
-								undo={goBack}
-								action={() => call()}
-								actionIcon='refresh-outline'
-							/>
-							<NetworkMapBody peers={peers} />
-						</ScrollView>
-					</SwipeNavRecognizer>
-				</Layout>
-			)}
-		</Translation>
+		<Layout style={{ flex: 1, backgroundColor: colors['main-background'] }}>
+			<StatusBar
+				backgroundColor={colors['alt-secondary-background-header']}
+				barStyle='light-content'
+			/>
+			<ScrollView bounces={false}>
+				<NetworkMapBody peers={peers} />
+			</ScrollView>
+		</Layout>
 	)
 }

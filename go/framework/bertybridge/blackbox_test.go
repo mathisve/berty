@@ -1,3 +1,8 @@
+// @FIXME(gfanton): auto relay can occasionally rise data race in some tests,
+// disabling race for now
+//go:build !race
+// +build !race
+
 package bertybridge_test
 
 import (
@@ -9,7 +14,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"berty.tech/berty/v2/go/framework/bertybridge"
-	"berty.tech/berty/v2/go/pkg/bertyaccount"
+	"berty.tech/berty/v2/go/pkg/accounttypes"
 	bridge_svc "berty.tech/berty/v2/go/pkg/bertybridge"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
 )
@@ -44,7 +49,7 @@ func Example() {
 		"--log.format=console",
 		"--node.display-name=",
 		"--node.listeners=/ip4/127.0.0.1/tcp/0/grpcws",
-		"--p2p.swarm-listeners=/ip4/0.0.0.0/tcp/0,/ip6/::/tcp/0",
+		"--p2p.swarm-listeners=/ip4/127.0.0.1/tcp/0,/ip6/::1/tcp/0",
 		"--p2p.mdns=false",
 		"--p2p.webui-listener=:3000",
 		"--store.dir=" + tmpdir,
@@ -53,7 +58,7 @@ func Example() {
 	// open account
 	{
 		// create `CreateAccount` Input
-		input := &bertyaccount.CreateAccount_Request{Args: args}
+		input := &accounttypes.CreateAccount_Request{Args: args}
 		payload, err := proto.Marshal(input)
 		checkErr(err)
 
@@ -87,7 +92,7 @@ func Example() {
 	// check for GRPC listeners
 	{
 		// create `InstanceGetConfiguration` Input
-		input := &bertyaccount.GetGRPCListenerAddrs_Request{}
+		input := &accounttypes.GetGRPCListenerAddrs_Request{}
 		payload, err := proto.Marshal(input)
 		checkErr(err)
 
@@ -111,7 +116,7 @@ func Example() {
 		checkErr(err)
 
 		// deserialize reply
-		var res bertyaccount.GetGRPCListenerAddrs_Reply
+		var res accounttypes.GetGRPCListenerAddrs_Reply
 		err = proto.Unmarshal(output.Payload, &res)
 		checkErr(err)
 

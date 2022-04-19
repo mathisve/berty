@@ -9,6 +9,8 @@ import (
 	ps "github.com/libp2p/go-libp2p-pubsub"
 	ps_pb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"go.uber.org/zap"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 // PubsubMonitor is an EventTracer
@@ -19,7 +21,7 @@ type EventMonitor int
 const (
 	TypeEventMonitorPeerUnknown EventMonitor = iota
 	TypeEventMonitorPeerJoined
-	TypeEventMonitorPeerLeaved
+	TypeEventMonitorPeerLeft
 )
 
 type EventTracer interface {
@@ -77,7 +79,7 @@ func (pt *PubsubMonitor) Trace(e *ps_pb.TraceEvent) {
 		topic := e.GetLeave().GetTopic()
 		peer := pt.h.ID()
 		pt.Emit(&EvtPubSubTopic{
-			EventType: TypeEventMonitorPeerLeaved,
+			EventType: TypeEventMonitorPeerLeft,
 			Topic:     topic,
 			PeerID:    peer,
 		})
@@ -87,14 +89,14 @@ func (pt *PubsubMonitor) Trace(e *ps_pb.TraceEvent) {
 		if err != nil {
 			pt.logger.Warn("unable to parse peerid",
 				zap.String("type", e.GetType().String()),
-				zap.String("topic", e.GetGraft().GetTopic()))
+				logutil.PrivateString("topic", e.GetGraft().GetTopic()))
 			return
 		}
 
 		topics := pt.popTopicFromPeer(peerid)
 		for _, topic := range topics {
 			pt.Emit(&EvtPubSubTopic{
-				EventType: TypeEventMonitorPeerLeaved,
+				EventType: TypeEventMonitorPeerLeft,
 				Topic:     topic,
 				PeerID:    peerid,
 			})
@@ -106,7 +108,7 @@ func (pt *PubsubMonitor) Trace(e *ps_pb.TraceEvent) {
 		if err != nil {
 			pt.logger.Warn("unable to parse peerid",
 				zap.String("type", e.GetType().String()),
-				zap.String("topic", e.GetGraft().GetTopic()))
+				logutil.PrivateString("topic", e.GetGraft().GetTopic()))
 			return
 		}
 

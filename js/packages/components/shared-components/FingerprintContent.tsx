@@ -1,8 +1,10 @@
 import React from 'react'
 import { View } from 'react-native'
-import { Text } from '@ui-kitten/components'
-import { useStyles } from '@berty-tech/styles'
 import { SHA3 } from 'sha3'
+
+import { useStyles } from '@berty/styles'
+import { Maybe, useThemeColor } from '@berty/store'
+import { UnifiedText } from './UnifiedText'
 
 //
 // FingerprintContent => Generally on TabBar there is a TabItem Fingerpint that show this component
@@ -23,18 +25,18 @@ const useStylesFingerprintContent = () => {
 
 const FingerprintContentText: React.FC<FingerprintContentProps> = ({ fingerprint }) => {
 	const [{ text }] = useStyles()
+	const colors = useThemeColor()
 	const _styles = useStylesFingerprintContent()
 	return (
-		<Text
+		<UnifiedText
 			style={[
-				text.color.blue,
-				text.bold.medium,
+				text.bold,
 				_styles.fingerprintContentText,
-				{ fontFamily: 'Courier' },
+				{ fontFamily: 'Courier, monospace', color: colors['background-header'] },
 			]}
 		>
 			{fingerprint.toUpperCase()}
-		</Text>
+		</UnifiedText>
 	)
 }
 
@@ -50,25 +52,31 @@ const FingerprintContentFaction: React.FC<{ digestPart: string }> = ({ digestPar
 	)
 }
 
-export const FingerprintContent: React.FC<{ seed: string; isEncrypted: boolean }> = ({
+export const FingerprintContent: React.FC<{ seed: Maybe<string>; isEncrypted?: boolean }> = ({
 	seed,
 	isEncrypted,
 }) => {
 	const [{ column, border, padding }] = useStyles()
+	const colors = useThemeColor()
+
 	if (isEncrypted) {
 		return (
-			<Text style={{ textAlign: 'center' }}>
+			<UnifiedText style={{ textAlign: 'center' }}>
 				This conversation is totally encrypted, title included.
-			</Text>
+			</UnifiedText>
 		)
 	}
 	if (!seed) {
-		return <Text style={{ textAlign: 'center' }}>No seed</Text>
+		return <UnifiedText style={{ textAlign: 'center' }}>No seed</UnifiedText>
 	}
 	const digest = new SHA3(256).update(seed).digest('hex')
 	return (
 		<View
-			style={[border.radius.medium, padding.medium, { backgroundColor: '#E8E9FC', width: '100%' }]}
+			style={[
+				border.radius.medium,
+				padding.medium,
+				{ backgroundColor: colors['input-background'], width: '100%' },
+			]}
 		>
 			<View style={[column.top]}>
 				<FingerprintContentFaction digestPart={digest.substr(0, 16)} />

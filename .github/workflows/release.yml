@@ -3,55 +3,170 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    paths:
+      # Go
+      - "go/**"
+      - "!go/**.md"
+      - ".goreleaser"
+      - "go.*"
+      - "**.go"
+      # CI
+      - ".github/workflows/release.yml"
+      - "tool/publish-npm-package"
+      # NPM package
+      - "./js/packages/api"
 
 jobs:
-  release:
-    name: releaser
+  semantic-release:
+    name: semantic release
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        golang: [1.16.x]
+    outputs:
+      new-release-published: ${{ steps.semantic-echo.outputs.new-release-published }}
+      release-version: ${{ steps.semantic-echo.outputs.release-version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@master
+        uses: actions/checkout@v3
+
       - name: Unshallow
         run: git fetch --prune --unshallow
+
       - name: Run Semantic Release
         id: semantic
         uses: docker://ghcr.io/codfish/semantic-release-action:v1
+        with:
+          branches: |
+            ['master']
+          plugins: |
+            [
+              '@semantic-release/commit-analyzer',
+              '@semantic-release/release-notes-generator',
+              '@semantic-release/github'
+            ]
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install libgl
-        if: steps.semantic.outputs.new-release-published == 'true'
+
+      - name: Export Semantic Release
+        id: semantic-echo
         run: |
-          sudo apt update
-          sudo apt install -f
-          sudo apt install -f -y libgl1-mesa-glx libgl1-mesa-dev xorg-dev
+          echo "::set-output name=new-release-published::${{steps.semantic.outputs.new-release-published}}"
+          echo "::set-output name=release-version::${{steps.semantic.outputs.release-version}}"
+
+
+  post-semantic-release:
+    needs: semantic-release
+    #if: needs.semantic-release.outputs.new-release-published == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Unshallow
+        run: git fetch --prune --unshallow
+
+      - uses: actions/setup-node@v2
+        if: needs.semantic-release.outputs.new-release-published == 'true'
+        with:
+          node-version: "14.x"
+          registry-url: "https://registry.npmjs.org"
+
       - name: Set up Go
-        if: steps.semantic.outputs.new-release-published == 'true'
         uses: actions/setup-go@v2
         with:
-          go-version: ${{ matrix.golang }}
-      - name: Cache Go modules
-        if: steps.semantic.outputs.new-release-published == 'true'
-        uses: actions/cache@v2.1.5
-        with:
-          path: ~/go/pkg/mod
-          key:          ${{ runner.os }}-go-${{ matrix.golang }}-v1-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-${{ matrix.golang }}-v1-
-      - name: Run GoReleaser
-        if: steps.semantic.outputs.new-release-published == 'true'
-        uses: goreleaser/goreleaser-action@v2
-        with:
-          version: latest
-          args: release --rm-dist
+          go-version: 1.17.x
+
+      - name: "Publish npm package: @berty/api (Real)"
+        if: needs.semantic-release.outputs.new-release-published == 'true'
+        run: cd tool && go run ./publish-npm-package -path=../js/packages/api -version=${{ needs.semantic-release.outputs.release-version }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        continue-on-error: true
+      # Next step also sets up a .npmrc file for automatic publishing to npm
+
+      - name: "Publish npm package: @berty/api (DryRun)"
+        if: needs.semantic-release.outputs.new-release-published != 'true'
+        run: cd tool && go run ./publish-npm-package -path=../js/packages/api -version=0.0.0 -dry-run
+
       - name: Register version on pkg.go.dev
-        if: steps.semantic.outputs.new-release-published == 'true'
+        if: needs.semantic-release.outputs.new-release-published == 'true'
         run: |
           package=$(cat go.mod | grep ^module | awk '{print $2}')
-          version=v${{ steps.semantic.outputs.release-version }}
+          version=v${{ needs.semantic-release.outputs.release-version }}
           url=https://proxy.golang.org/${package}/@v/${version}.info
           set -x +e
           curl -i $url
+
+
+  build-asset:
+    needs: semantic-release
+    name: build asset
+    runs-on: ${{ matrix.config.runs-on }}
+    strategy:
+      matrix:
+        config: [
+          {runs-on: 'ubuntu-latest',  goos: 'linux',   golang: '1.17.x'},
+          {runs-on: 'macos-latest',  goos: 'darwin',  golang: '1.17.x'},
+          {runs-on: 'windows-latest', goos: 'windows', golang: '1.17.x'},
+          # TODO: bertyguy
+        ]
+    env:
+      OSXCROSS_DIR: /home/runner/work/osxcross
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Unshallow
+        run: git fetch --prune --unshallow
+
+      - name: Load variables from file
+        uses: antifree/json-to-variables@v1.0.1
+        with:
+          filename: .github/workflows/utils/variables.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.config.golang }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.config.golang }}-${{ env.json_cache-version_go }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-${{ matrix.config.golang }}-${{ env.json_cache-version_go }}-
+
+      - name: Install Linux Dependencies
+        if: matrix.config.goos == 'linux'
+        run: |
+          echo 'deb http://security.ubuntu.com/ubuntu bionic-security main' | sudo tee -a /etc/apt/sources.list
+          sudo apt update
+          sudo apt-cache policy libssl1.0-dev
+          sudo apt install -f libssl1.0-dev
+          sudo apt install -f gcc-multilib g++-multilib gcc-mingw-w64 clang
+          sudo apt install -f -y libgl1-mesa-glx libgl1-mesa-dev xorg-dev
+          mkdir ../../osxcross
+          git clone https://github.com/plentico/osxcross-target.git ../../osxcross/target
+
+      - name: "Run GoReleaser (DryRun)"
+        uses: goreleaser/goreleaser-action@v2
+        if: needs.semantic-release.outputs.new-release-published != 'true'
+        with:
+          version: latest
+          args: release --rm-dist -f .github/workflows/utils/.goreleaser.${{ matrix.config.goos }}.yml --skip-publish
+
+      - name: "Run GoReleaser (Publish)"
+        uses: goreleaser/goreleaser-action@v2
+        if: needs.semantic-release.outputs.new-release-published == 'true'
+        with:
+          version: latest
+          args: release --rm-dist -f .github/workflows/utils/.goreleaser.${{ matrix.config.goos }}.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Dist/ directory listing (Posix)"
+        if: matrix.config.goos != 'windows'
+        run: ls -lah dist
+
+      - name: "Dist/ directory listing (Windows)"
+        if: matrix.config.goos == 'windows'
+        run: Get-ChildItem -Recurse dist

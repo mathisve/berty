@@ -6,26 +6,25 @@ import (
 	"path/filepath"
 	"time"
 
-	// nolint:staticcheck
 	ipfs_ds "github.com/ipfs/go-datastore"
 	ipfs_cfg "github.com/ipfs/go-ipfs-config"
 	ipfs_loader "github.com/ipfs/go-ipfs/plugin/loader"
 	ipfs_repo "github.com/ipfs/go-ipfs/repo"
-	ipfs_fsrepo "github.com/ipfs/go-ipfs/repo/fsrepo"
 	p2p_ci "github.com/libp2p/go-libp2p-core/crypto"
 	p2p_peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
 
 	"berty.tech/berty/v2/go/pkg/errcode"
+	encrepo "berty.tech/go-ipfs-repo-encrypted"
 )
 
 // defaultConnMgrHighWater is the default value for the connection managers
 // 'high water' mark
-const defaultConnMgrHighWater = 50
+const defaultConnMgrHighWater = 200
 
 // defaultConnMgrLowWater is the default value for the connection managers 'low
 // water' mark
-const defaultConnMgrLowWater = 10
+const defaultConnMgrLowWater = 150
 
 // defaultConnMgrGracePeriod is the default value for the connection managers
 // grace period
@@ -46,62 +45,54 @@ func CreateMockedRepo(dstore ipfs_ds.Batching) (ipfs_repo.Repo, error) {
 	}, nil
 }
 
-func LoadRepoFromPath(path string) (ipfs_repo.Repo, error) {
-	if _, err := loadPlugins(path); err != nil {
+func LoadRepoFromPath(path string, key []byte, salt []byte) (ipfs_repo.Repo, error) {
+	dir, _ := filepath.Split(path)
+	if _, err := loadPlugins(dir); err != nil {
 		return nil, errors.Wrap(err, "failed to load plugins")
 	}
 
 	// init repo if needed
-	if !ipfs_fsrepo.IsInitialized(path) {
+	isInit, err := encrepo.IsInitialized(path, key, salt)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to check if repo is initialized")
+	}
+	if !isInit {
 		cfg, err := createBaseConfig()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create base config")
 		}
 
-		ucfg, err := upgradeToPersistanceConfig(cfg)
+		ucfg, err := upgradeToPersistentConfig(cfg)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to upgrade repo")
 		}
 
-		if err := ipfs_fsrepo.Init(path, ucfg); err != nil {
+		ucfg.Datastore.Spec = nil
+
+		if err := encrepo.Init(path, key, salt, ucfg); err != nil {
 			return nil, errors.Wrap(err, "failed to init repo")
 		}
 	}
 
-	return ipfs_fsrepo.Open(path)
+	return encrepo.Open(path, key, salt)
 }
 
 var DefaultSwarmListeners = []string{
 	"/ip4/0.0.0.0/tcp/0",
 	"/ip6/::/tcp/0",
-	"/ip4/0.0.0.0/udp/0/quic",
-	"/ip6/::/udp/0/quic",
 }
 
 func createBaseConfig() (*ipfs_cfg.Config, error) {
 	c := ipfs_cfg.Config{}
-	priv, pub, err := p2p_ci.GenerateKeyPairWithReader(p2p_ci.Ed25519, 2048, crand.Reader) // nolint:staticcheck
-	if err != nil {
-		return nil, errcode.TODO.Wrap(err)
-	}
-
-	pid, err := p2p_peer.IDFromPublicKey(pub) // nolint:staticcheck
-	if err != nil {
-		return nil, errcode.TODO.Wrap(err)
-	}
-
-	privkeyb, err := priv.Bytes()
-	if err != nil {
-		return nil, errcode.TODO.Wrap(err)
-	}
 
 	// set default bootstrap
 	c.Bootstrap = ipfs_cfg.DefaultBootstrapAddresses
 	c.Peering.Peers = []p2p_peer.AddrInfo{}
 
 	// Identity
-	c.Identity.PeerID = pid.Pretty()
-	c.Identity.PrivKey = base64.StdEncoding.EncodeToString(privkeyb)
+	if err := resetRepoIdentity(&c); err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
 
 	// Discovery
 	c.Discovery.MDNS.Enabled = true
@@ -111,8 +102,7 @@ func createBaseConfig() (*ipfs_cfg.Config, error) {
 	c.Addresses.Swarm = DefaultSwarmListeners
 
 	// Swarm
-	c.Swarm.EnableAutoRelay = true
-	c.Swarm.EnableRelayHop = false
+	c.Swarm.RelayClient.Enabled = ipfs_cfg.True
 	c.Swarm.ConnMgr = ipfs_cfg.ConnMgr{
 		LowWater:    defaultConnMgrLowWater,
 		HighWater:   defaultConnMgrHighWater,
@@ -127,7 +117,60 @@ func createBaseConfig() (*ipfs_cfg.Config, error) {
 	return &c, nil
 }
 
-func upgradeToPersistanceConfig(cfg *ipfs_cfg.Config) (*ipfs_cfg.Config, error) {
+func ResetExistingRepoIdentity(repo ipfs_repo.Repo, path string, key []byte, salt []byte) (ipfs_repo.Repo, error) {
+	cfg, err := repo.Config()
+	if err != nil {
+		_ = repo.Close()
+		return nil, errcode.ErrInternal.Wrap(err)
+	}
+
+	if err := resetRepoIdentity(cfg); err != nil {
+		return nil, errcode.TODO.Wrap(err)
+	}
+
+	updatedCfg, err := upgradeToPersistentConfig(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to upgrade repo")
+	}
+
+	err = repo.SetConfig(updatedCfg)
+	_ = repo.Close()
+	if err != nil {
+		return nil, errcode.ErrInternal.Wrap(err)
+	}
+
+	repo, err = encrepo.Open(path, key, salt)
+	if err != nil {
+		return nil, errcode.ErrInternal.Wrap(err)
+	}
+
+	return repo, nil
+}
+
+func resetRepoIdentity(c *ipfs_cfg.Config) error {
+	priv, pub, err := p2p_ci.GenerateKeyPairWithReader(p2p_ci.Ed25519, 2048, crand.Reader) // nolint:staticcheck
+	if err != nil {
+		return errcode.TODO.Wrap(err)
+	}
+
+	pid, err := p2p_peer.IDFromPublicKey(pub) // nolint:staticcheck
+	if err != nil {
+		return errcode.TODO.Wrap(err)
+	}
+
+	privkeyb, err := p2p_ci.MarshalPrivateKey(priv)
+	if err != nil {
+		return errcode.TODO.Wrap(err)
+	}
+
+	// Identity
+	c.Identity.PeerID = pid.Pretty()
+	c.Identity.PrivKey = base64.StdEncoding.EncodeToString(privkeyb)
+
+	return nil
+}
+
+func upgradeToPersistentConfig(cfg *ipfs_cfg.Config) (*ipfs_cfg.Config, error) {
 	cfgCopy, err := cfg.Clone()
 	if err != nil {
 		return nil, err

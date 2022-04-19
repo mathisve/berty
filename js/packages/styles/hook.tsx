@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useContext, useState } from 'react'
+import { useDimensions } from '@react-native-community/hooks'
+import { PixelRatio } from 'react-native'
+
 import { Declaration, Styles, ScaleSizes } from './types'
 import { defaultStylesDeclaration, mapScaledDeclarationWithDims } from './map-declaration'
 import {
@@ -13,8 +16,6 @@ import {
 	iPadShortEdge,
 	iPadLongEdge,
 } from './constant'
-import { useDimensions } from '@react-native-community/hooks'
-import { PixelRatio } from 'react-native'
 
 const defaultStyles = mapScaledDeclarationWithDims(defaultStylesDeclaration, {
 	scaleSize: initialScaleSize,
@@ -22,13 +23,13 @@ const defaultStyles = mapScaledDeclarationWithDims(defaultStylesDeclaration, {
 	scaleHeight: initialScaleHeight,
 })
 
-export type SetStylesDeclaration = (
+type SetStylesDeclaration = (
 	decl: Declaration,
 	setStyles: React.Dispatch<React.SetStateAction<Styles>>,
 	{ fontScale, scaleSize, scaleHeight }: ScaleSizes,
 ) => void
 
-export const setStylesDeclaration: SetStylesDeclaration = (
+const setStylesDeclaration: SetStylesDeclaration = (
 	decl,
 	setStyles,
 	{ fontScale, scaleSize, scaleHeight } = {
@@ -38,7 +39,21 @@ export const setStylesDeclaration: SetStylesDeclaration = (
 	},
 ) => setStyles(mapScaledDeclarationWithDims(decl, { fontScale, scaleSize, scaleHeight }))
 
-export const ctx: React.Context<any> = createContext<any>([
+const ctx = createContext<
+	[
+		Styles,
+		{
+			scaleSize: number
+			scaleHeight: number
+			fontScale: number
+			windowHeight: number
+			windowWidth: number
+			isGteIpadSize: boolean
+			isLandscape: boolean
+		},
+		(decl: Declaration) => void,
+	]
+>([
 	defaultStyles,
 	{
 		scaleSize: initialScaleSize,
@@ -80,8 +95,8 @@ export const Provider: React.FC = ({ children }) => {
 				scaleHeight: _scaleHeight,
 			}),
 		)
-		// console.log('recalculating styles')
 	}, [windowHeight, windowWidth])
+
 	return (
 		<ctx.Provider
 			value={[
@@ -107,7 +122,6 @@ export const Provider: React.FC = ({ children }) => {
 		</ctx.Provider>
 	)
 }
-export const Consumer = ctx.Consumer
 
 export const useStyles = () => {
 	return useContext(ctx)

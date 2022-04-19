@@ -1,77 +1,108 @@
-import React, { useEffect } from 'react'
-import { useStyles } from '@berty-tech/styles'
-import { View, Modal, TouchableOpacity, ScrollView } from 'react-native'
-import { Text } from '@ui-kitten/components'
+import React from 'react'
+import { View, Modal, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native'
 import { useTranslation } from 'react-i18next'
-import beapi from '@berty-tech/api'
+import { Buffer } from 'buffer'
+
+import { useStyles } from '@berty/styles'
+import beapi from '@berty/api'
+import { useThemeColor, useMessengerClient, Maybe, prepareMediaBytes } from '@berty/store'
+import { useAllConversations, useOneToOneContact, usePlaySound } from '@berty/hooks'
+
 import { ConversationAvatar } from '../avatars'
-import { useClient } from '@berty-tech/store/hooks'
+import { UnifiedText } from '../shared-components/UnifiedText'
 
-import { useSortedConversationList, useMsgrContext } from '@berty-tech/store/hooks'
+const Item: React.FC<{ conversation: beapi.messenger.IConversation; image: any }> = React.memo(
+	({ conversation, image }) => {
+		const [{ border, padding, margin }] = useStyles()
+		const colors = useThemeColor()
+		const playSound = usePlaySound()
+		const client = useMessengerClient()
+		const contact = useOneToOneContact(conversation.publicKey || '')
+		const [sending, setSending] = React.useState(false)
+		const { t } = useTranslation()
 
-import RNFS from 'react-native-fs'
+		const prepareMediaAndSend = async (convPk: Maybe<string>) => {
+			if (!client) {
+				return
+			}
+			if (sending) {
+				return
+			}
+			setSending(true)
+
+			try {
+				const { filename, mimeType, displayName } = image
+				const mediaBytes = Buffer.from(image.uri.split('base64,')[1], 'base64')
+				const cid = await prepareMediaBytes(client, { filename, mimeType, displayName }, mediaBytes)
+
+				const buf = beapi.messenger.AppMessage.UserMessage.encode({ body: '' }).finish()
+				await client.interact({
+					conversationPublicKey: convPk,
+					type: beapi.messenger.AppMessage.Type.TypeUserMessage,
+					payload: buf,
+					mediaCids: [cid],
+				})
+				playSound('messageSent')
+			} catch (err) {
+				console.warn('error sending message:', err)
+			}
+			setSending(false)
+		}
+
+		const userDisplayName =
+			(conversation.type === beapi.messenger.Conversation.Type.MultiMemberType
+				? conversation.displayName
+				: contact?.displayName) || ''
+		return (
+			<View
+				key={conversation.publicKey}
+				style={[
+					padding.medium,
+					{
+						flexDirection: 'row',
+						alignItems: 'center',
+						justifyContent: 'space-between',
+					},
+				]}
+			>
+				<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+					<ConversationAvatar size={40} publicKey={conversation.publicKey} />
+					<UnifiedText style={[margin.left.small]}>{userDisplayName || undefined}</UnifiedText>
+				</View>
+				<TouchableOpacity
+					style={[
+						{ backgroundColor: colors['background-header'] },
+						padding.vertical.small,
+						padding.horizontal.medium,
+						border.radius.small,
+					]}
+					disabled={sending}
+					onPress={() => prepareMediaAndSend(conversation.publicKey)}
+				>
+					{sending ? (
+						<ActivityIndicator color={colors['reverted-main-text']} />
+					) : (
+						<UnifiedText style={{ color: colors['reverted-main-text'] }}>
+							<>{t('chat.files.forward')}</>
+						</UnifiedText>
+					)}
+				</TouchableOpacity>
+			</View>
+		)
+	},
+)
 
 export const ForwardToBertyContactModal: React.FC<{
 	image: any
 	onClose: () => void
 }> = ({ image, onClose }) => {
-	const tempPath = `${RNFS.TemporaryDirectoryPath}/${image.filename}`
+	const [{ border }, { windowHeight }] = useStyles()
+	const colors = useThemeColor()
+	const conversations = useAllConversations()
 
-	const [{ color, border, padding, margin }, { windowHeight }] = useStyles()
-	const { t }: { t: any } = useTranslation()
-	const conversations: any[] = useSortedConversationList()
-	const ctx = useMsgrContext()
-	const client = useClient()
-
-	useEffect(() => {
-		RNFS.writeFile(tempPath, image.uri.split('base64,')[1], 'base64')
-			.then((res) => console.log(res))
-			.catch((err) => console.log(err))
-	}, [image, tempPath])
-
-	const handleClose = async () => {
-		try {
-			await RNFS.unlink(tempPath)
-		} catch (err) {
-		} finally {
-			onClose()
-		}
-	}
-
-	const prepareMediaAndSend = async (convPk: string) => {
-		const buf = beapi.messenger.AppMessage.UserMessage.encode({ body: '' }).finish()
-		const { filename, mimeType, displayName } = image
-
-		const stream = await client?.mediaPrepare({})
-		await stream?.emit({
-			info: { filename, mimeType, displayName },
-			uri: tempPath,
-		})
-		const reply = await stream?.stopAndRecv()
-		if (reply?.cid) {
-			ctx.client
-				?.interact({
-					conversationPublicKey: convPk,
-					type: beapi.messenger.AppMessage.Type.TypeUserMessage,
-					payload: buf,
-					mediaCids: [reply.cid],
-				})
-				.then(() => {
-					ctx.playSound('messageSent')
-				})
-				.catch((e) => {
-					console.warn('e sending message:', e)
-				})
-		}
-	}
 	return (
-		<Modal transparent style={{}} animationType='slide' onRequestClose={handleClose}>
-			<TouchableOpacity
-				onPress={handleClose}
-				style={{
-					flex: 1,
-				}}
-			/>
+		<Modal transparent animationType='slide' onRequestClose={onClose}>
+			<TouchableOpacity onPress={onClose} style={{ flex: 1 }} />
 			<ScrollView
 				style={[
 					border.radius.top.small,
@@ -81,75 +112,13 @@ export const ForwardToBertyContactModal: React.FC<{
 						left: 0,
 						bottom: 0,
 						right: 0,
-						backgroundColor: color.white,
+						backgroundColor: colors['main-background'],
 					},
 				]}
 			>
-				{conversations
-					.filter((conv) => !conv.displayName)
-					.map((conversation) => {
-						const contact =
-							Object.values(ctx.contacts).find(
-								(c: any) => c.conversationPublicKey === conversation.publicKey,
-							) || null
-
-						const userDisplayName =
-							conversation.type === beapi.messenger.Conversation.Type.MultiMemberType
-								? conversation.displayName
-								: contact?.displayName || ''
-						return (
-							<View
-								key={conversation.publicKey}
-								style={[
-									padding.medium,
-									{
-										flexDirection: 'row',
-										alignItems: 'center',
-										justifyContent: 'space-between',
-									},
-								]}
-							>
-								<View
-									style={{
-										flexDirection: 'row',
-										alignItems: 'center',
-									}}
-								>
-									<ConversationAvatar size={40} publicKey={conversation.publicKey} />
-									<Text
-										style={[
-											{
-												color: color.black,
-											},
-											margin.left.small,
-										]}
-									>
-										{userDisplayName}
-									</Text>
-								</View>
-								<TouchableOpacity
-									style={[
-										{
-											backgroundColor: '#3F49EA',
-										},
-										padding.vertical.small,
-										padding.horizontal.medium,
-										border.radius.small,
-									]}
-									onPress={() => prepareMediaAndSend(conversation.publicKey)}
-									activeOpacity={0.6}
-								>
-									<Text
-										style={{
-											color: color.white,
-										}}
-									>
-										{t('chat.files.forward')}
-									</Text>
-								</TouchableOpacity>
-							</View>
-						)
-					})}
+				{conversations.map(conv => (
+					<Item key={conv.publicKey} conversation={conv} image={image} />
+				))}
 			</ScrollView>
 		</Modal>
 	)

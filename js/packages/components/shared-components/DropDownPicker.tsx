@@ -1,25 +1,39 @@
+import { useThemeColor } from '@berty/store/hooks'
+import { useStyles } from '@berty/styles'
+import { Icon } from '@ui-kitten/components'
 import React, { useState } from 'react'
-import Flag from 'react-native-flags'
-import { useStyles } from '@berty-tech/styles'
-import { Text, Icon } from '@ui-kitten/components'
+import { Animated, Easing, TouchableOpacity, View } from 'react-native'
+import { UnifiedText } from './UnifiedText'
 
-import { View, TouchableOpacity, Animated, Easing } from 'react-native'
-
-type Item = {
+export type Item = {
 	label: string
 	value: string
 }
 
 export const DropDownPicker: React.FC<{
 	items: Item[]
-	defaultValue: string
+	defaultValue: string | number | symbol | null
 	onChangeItem: (item: Item) => void
-}> = ({ items, defaultValue, onChangeItem }) => {
-	const [{ padding, border, background, opacity, text, margin }, { scaleSize }] = useStyles()
+	icon?: string
+	pack?: string
+	placeholder?: string
+	mode?: 'languages' | 'themeCollection'
+}> = ({
+	items,
+	defaultValue,
+	onChangeItem,
+	icon = null,
+	pack = '',
+	placeholder = null,
+	mode = 'languages',
+}) => {
+	const [{ padding, border, opacity, margin }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 
 	const [isOpen, setOpen] = useState(false)
 	const [animateHeight] = useState(new Animated.Value(0))
 	const [rotateValue] = useState(new Animated.Value(0))
+	const isModeLanguages = mode === 'languages'
 
 	const rotateAnimation = rotateValue.interpolate({
 		inputRange: [0, 1],
@@ -40,16 +54,23 @@ export const DropDownPicker: React.FC<{
 				useNativeDriver: true,
 			}),
 		]).start()
-		setOpen((prev) => !prev)
+		setOpen(prev => !prev)
 	}
-	const selectedItem = items.find((item) => item.value === defaultValue)
+	const selectedItem = items.find(item =>
+		isModeLanguages ? item.value === defaultValue : item.label === defaultValue,
+	)
 	return (
 		<View
 			style={[
-				background.white,
-				border.shadow.medium,
+				// border.shadow.medium,
 				border.radius.medium,
-				{ flex: 1, marginTop: 22 * scaleSize, minHeight: 60 * scaleSize },
+				{
+					flex: 1,
+					marginTop: 22 * scaleSize,
+					minHeight: 55 * scaleSize,
+					backgroundColor: colors['input-background'],
+					// shadowColor: colors.shadow,
+				},
 			]}
 		>
 			<TouchableOpacity
@@ -64,30 +85,31 @@ export const DropDownPicker: React.FC<{
 				]}
 				onPress={toggleView}
 			>
-				<View style={[margin.right.medium]}>
-					<Flag code={selectedItem?.value.split('-')[1]} size={24} />
-				</View>
-				<Text style={[text.size.medium]}>{selectedItem?.label}</Text>
+				{icon ? (
+					<View style={[margin.right.medium]}>
+						<Icon
+							name={icon}
+							pack={pack}
+							fill={colors['main-text']}
+							width={25 * scaleSize}
+							height={25 * scaleSize}
+						/>
+					</View>
+				) : null}
+				{placeholder && !selectedItem?.label ? (
+					<UnifiedText style={{ color: `${colors['main-text']}50` }}>{placeholder}</UnifiedText>
+				) : (
+					<UnifiedText>{selectedItem?.label}</UnifiedText>
+				)}
 				<View style={[{ flex: 1, alignItems: 'flex-end' }]}>
-					<Animated.View
-						style={[
-							{
-								transform: [{ rotate: rotateAnimation }],
-							},
-						]}
-					>
-						<Icon name='arrow-ios-downward' height={25} width={25} fill='black' />
+					<Animated.View style={[{ transform: [{ rotate: rotateAnimation }] }]}>
+						<Icon name='arrow-ios-downward' height={25} width={25} fill={colors['main-text']} />
 					</Animated.View>
 				</View>
 			</TouchableOpacity>
 
 			<Animated.ScrollView
-				style={[
-					border.radius.bottom.medium,
-					{
-						maxHeight: animateHeight,
-					},
-				]}
+				style={[border.radius.bottom.medium, { maxHeight: animateHeight }]}
 				nestedScrollEnabled
 				showsVerticalScrollIndicator={false}
 			>
@@ -101,18 +123,13 @@ export const DropDownPicker: React.FC<{
 						style={[padding.medium, { flexDirection: 'row', alignItems: 'center' }]}
 						key={key}
 					>
-						<View style={[margin.right.medium]}>
-							<Flag code={item.value.split('-')[1]} size={24} />
-						</View>
-						<Text style={[text.size.medium]} key={item.value}>
-							{item.label}
-						</Text>
+						<UnifiedText key={item.value}>{item.label}</UnifiedText>
 						<View
 							style={[
-								border.color.grey,
 								border.medium,
 								opacity(0.2),
 								{
+									borderColor: colors['secondary-text'],
 									position: 'absolute',
 									top: 0,
 									left: 0,

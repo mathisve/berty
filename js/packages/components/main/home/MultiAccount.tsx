@@ -1,29 +1,48 @@
 import React from 'react'
-import { Text, TouchableOpacity, View, GestureResponderEvent, ScrollView } from 'react-native'
+import { GestureResponderEvent, ScrollView, TouchableOpacity, View } from 'react-native'
 import { Icon } from '@ui-kitten/components'
-import DocumentPicker from 'react-native-document-picker'
-
-import { useStyles } from '@berty-tech/styles'
-import { useMsgrContext } from '@berty-tech/store/context'
-import { GenericAvatar } from '@berty-tech/components/avatars'
 import { useTranslation } from 'react-i18next'
+
+import { useStyles } from '@berty/styles'
+import { closeAccountWithProgress, useThemeColor, pbDateToNum, Maybe } from '@berty/store'
+import { importAccountFromDocumentPicker } from '@berty/components/pickerUtils'
+import { useAppDispatch, useAppSelector, useSwitchAccount } from '@berty/hooks'
+import beapi from '@berty/api'
+
+import { GenericAvatar } from '../../avatars'
+import {
+	selectAccounts,
+	selectEmbedded,
+	selectSelectedAccount,
+	setStateOnBoardingReady,
+} from '@berty/redux/reducers/ui.reducer'
+import { UnifiedText } from '@berty/components/shared-components/UnifiedText'
 
 const AccountButton: React.FC<{
 	name: string | null | undefined
 	onPress: ((event: GestureResponderEvent) => void) | undefined
-	avatar: any
+	avatar: JSX.Element
 	selected?: boolean
-	incompatible?: string
+	incompatible?: Maybe<string>
 }> = ({ name, onPress, avatar, selected = false, incompatible = null }) => {
-	const [{ margin, text, padding, border, color }] = useStyles()
+	const [{ margin, text, padding, border }] = useStyles()
+	const colors = useThemeColor()
+
 	return (
 		<TouchableOpacity
 			style={[
+				{ shadowColor: colors.shadow },
 				border.radius.medium,
 				padding.horizontal.medium,
 				border.shadow.medium,
 				margin.top.scale(2),
-				{ backgroundColor: incompatible ? color.grey : selected ? color.light.green : color.white },
+				{
+					backgroundColor: incompatible
+						? colors['secondary-text']
+						: selected
+						? colors['positive-asset']
+						: colors['main-background'],
+				},
 			]}
 			onPress={onPress}
 			disabled={incompatible ? true : false}
@@ -38,41 +57,44 @@ const AccountButton: React.FC<{
 			>
 				<View style={{ flexDirection: 'row', alignItems: 'center' }}>
 					{avatar}
-					<Text
-						style={[
-							text.color.black,
-							padding.left.medium,
-							text.bold.small,
-							text.align.center,
-							{ fontFamily: 'Open Sans' },
-							text.size.scale(17),
-						]}
-					>
+					<UnifiedText style={[padding.left.medium, text.align.center, text.size.scale(17)]}>
 						{name}
-					</Text>
+					</UnifiedText>
 				</View>
-				<Icon name='arrow-ios-downward' width={30} height={30} fill={color.black} />
+				<Icon name='arrow-ios-downward' width={30} height={30} fill={colors['main-text']} />
 			</View>
 		</TouchableOpacity>
 	)
 }
 
-export const MultiAccount: React.FC<{ onPress: any }> = ({ onPress }) => {
-	const [{ padding, color }, { scaleSize }] = useStyles()
-	const {
-		accounts,
-		createNewAccount,
-		selectedAccount,
-		switchAccount,
-		importAccount,
-	} = useMsgrContext()
+export const MultiAccount: React.FC<{ onPress: () => void }> = ({ onPress }) => {
+	const [{ padding }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 	const { t } = useTranslation()
+	const dispatch = useAppDispatch()
+	const selectedAccount = useAppSelector(selectSelectedAccount)
+	const switchAccount = useSwitchAccount()
+	const accounts = useAppSelector(selectAccounts)
+	const embedded = useAppSelector(selectEmbedded)
+
+	const [isHandlingPress, setIsHandlingPress] = React.useState(false)
+	const handlePress = async (account: beapi.account.IAccountMetadata) => {
+		if (isHandlingPress) {
+			return
+		}
+		setIsHandlingPress(true)
+		if (selectedAccount !== account.accountId) {
+			return switchAccount(account.accountId || '')
+		} else if (selectedAccount === account.accountId && !account.error) {
+			return onPress()
+		}
+	}
 
 	return (
 		<TouchableOpacity
 			style={[
-				{ position: 'absolute', top: 120 * scaleSize, bottom: 0, right: 0, left: 0 },
 				padding.horizontal.medium,
+				{ position: 'absolute', top: 70 * scaleSize, bottom: 0, right: 0, left: 0 },
 			]}
 			onPress={onPress}
 		>
@@ -81,25 +103,24 @@ export const MultiAccount: React.FC<{ onPress: any }> = ({ onPress }) => {
 				contentContainerStyle={{ paddingBottom: 10 }}
 				showsVerticalScrollIndicator={false}
 			>
-				{accounts
-					.sort((a, b) => a.creationDate - b.creationDate)
-					.map((account, key) => {
+				{[...accounts]
+					.sort((a, b) => pbDateToNum(a.creationDate) - pbDateToNum(b.creationDate))
+					.map(account => {
 						return (
 							<AccountButton
-								key={key}
-								name={account?.error ? `Incompatible account ${account.name}` : account.name}
-								onPress={async () => {
-									if (selectedAccount !== account.accountId) {
-										await switchAccount(account.accountId)
-									} else if (selectedAccount === account.accountId && !account?.error) {
-										onPress()
-									}
-								}}
+								key={account.accountId}
+								name={
+									account?.error
+										? `Incompatible account ${account.name}\n${account.error}`
+										: account.name
+								}
+								onPress={() => handlePress(account)}
 								avatar={
 									<GenericAvatar
 										size={40}
 										cid={account?.avatarCid}
-										fallbackSeed={account?.publicKey}
+										colorSeed={account?.publicKey}
+										nameSeed={account?.name}
 									/>
 								}
 								selected={selectedAccount === account.accountId}
@@ -110,7 +131,8 @@ export const MultiAccount: React.FC<{ onPress: any }> = ({ onPress }) => {
 				<AccountButton
 					name={t('main.home.multi-account.create-button')}
 					onPress={async () => {
-						await createNewAccount()
+						await closeAccountWithProgress(dispatch)
+						dispatch(setStateOnBoardingReady())
 					}}
 					avatar={
 						<View
@@ -118,45 +140,40 @@ export const MultiAccount: React.FC<{ onPress: any }> = ({ onPress }) => {
 								height: 40,
 								width: 40,
 								borderRadius: 20,
-								backgroundColor: color.blue,
+								backgroundColor: colors['background-header'],
 								alignItems: 'center',
 								justifyContent: 'center',
 							}}
 						>
-							<Icon name='plus-outline' height={30} width={30} fill={color.white} />
+							<Icon
+								name='plus-outline'
+								height={30}
+								width={30}
+								fill={colors['reverted-main-text']}
+							/>
 						</View>
 					}
 				/>
 				<AccountButton
 					name={t('main.home.multi-account.import-button')}
-					onPress={async () => {
-						try {
-							const res = await DocumentPicker.pick({
-								// @ts-ignore
-								type: ['public.tar-archive', '*/*'],
-							})
-
-							await importAccount(res.uri.replace(/^file:\/\//, ''))
-						} catch (err) {
-							if (DocumentPicker.isCancel(err)) {
-								// ignore
-							} else {
-								console.error(err)
-							}
-						}
-					}}
+					onPress={() => importAccountFromDocumentPicker(embedded)}
 					avatar={
 						<View
 							style={{
 								height: 40,
 								width: 40,
 								borderRadius: 20,
-								backgroundColor: color.blue,
+								backgroundColor: colors['background-header'],
 								alignItems: 'center',
 								justifyContent: 'center',
 							}}
 						>
-							<Icon name='download-outline' height={30} width={30} fill={color.white} />
+							<Icon
+								name='download-outline'
+								height={30}
+								width={30}
+								fill={colors['reverted-main-text']}
+							/>
 						</View>
 					}
 				/>

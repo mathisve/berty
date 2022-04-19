@@ -1,0 +1,563 @@
+{
+	"onboarding": {
+		"getstarted": {
+			"title": "",
+			"desc": "",
+			"create-button": "",
+			"import-button": "",
+			"link-button": ""
+		},
+		"default-mode": {
+			"summary": {
+				"title": "",
+				"subtitle": "",
+				"first-point": "",
+				"second-point": "",
+				"back-button": "",
+				"accept-button": ""
+			}
+		},
+		"custom-mode": {
+			"summary": {
+				"title": "",
+				"subtitle": "",
+				"first-point": "",
+				"second-point": "",
+				"back-button": "",
+				"accept-button": ""
+			},
+			"settings": {
+				"off-grid": {
+					"title": "",
+					"ble-button": "",
+					"nearby-button": "",
+					"mc-button": "",
+					"mdns-button": ""
+				},
+				"routing": {
+					"title": "",
+					"dht-button": "",
+					"rdvp-button": ""
+				},
+				"access": {
+					"title": "",
+					"relay-button": "",
+					"bootstrap-button": "",
+					"replication-button": ""
+				},
+				"all-button": "",
+				"accept-button": ""
+			}
+		},
+		"create-account": {
+			"title": "Fiók létrehozása",
+			"placeholder": "",
+			"good-to-know": {
+				"title": "",
+				"first-point": "",
+				"second-point": ""
+			}
+		},
+		"generate-key": {
+			"title": "Berty node indítása…",
+			"desc": "A folyamat eltarthat néhány másodpercig"
+		},
+		"setup-finished": {
+			"title": "A beállítás befejeződött!",
+			"desc": "Mostantól használhatja az alkalmazást, elkezdheti hozzáadni a névjegyeket, majd szabadon és privát módon beszélgethet velük",
+			"button": "BERTY HASZNÁLATÁNAK KEZDÉSE"
+		},
+		"web-views": {
+			"title": "",
+			"desc": "",
+			"first-button": "Mégse",
+			"second-button": ""
+		}
+	},
+	"main": {
+		"home": {
+			"requests": {
+				"title": "Kérések",
+				"accept": "Elfogadás",
+				"card-title": "Kapcsolat felkérések!"
+			},
+			"input-placeholder": "Kulcsszó kereséshez",
+			"no-contacts": "Egyenlőre nincsenek ismerősei sem beszélgetései",
+			"search": {
+				"no-results": "Nincs találat"
+			},
+			"multi-account": {
+				"create-button": "Új fiók létrehozása",
+				"import-button": "Fiók importálása"
+			},
+			"create-group": {
+				"title": "Új csoport",
+				"add-members": "Tag hozzáadása",
+				"group-info": "Csoport infó",
+				"search-placeholder": "Keresés",
+				"continue": "FOLYTATÁS",
+				"create-group": "CSOPORT LÉTREHOZÁSA"
+			},
+			"create-group-finalize": {
+				"placeholder": "Csoport neve",
+				"about": "Csoport névjegye",
+				"first-bullet-point": "Bárki a csoportban kiküldhet meghívásokat vagy átnevezheti a csoportot",
+				"second-bullet-point": "Linken keresztül hívhat meg tagokat",
+				"third-bullet-point": "Elhagyhatja ezt a csoportot",
+				"fourth-bullet-point": "Nem törheti ezt a csoportot",
+				"fifth-bullet-point": "Nem dobhat ki egy csoporttagot ebből a csoportból"
+			},
+			"conversations": {
+				"request-sent": "",
+				"draft": "Vázlat: {{message}}"
+			}
+		},
+		"suggestion-display-name-initial": "Kattintson ide a hozzáadáshoz",
+		"scan": {
+			"title": "QR-kód másolása"
+		}
+	},
+	"settings": {
+		"home": {
+			"proximity-button": "",
+			"notifications-button": "Értesítések",
+			"contact-convs-button": "",
+			"appearance-button": "",
+			"devices-button": "",
+			"accounts-button": "Fiókok",
+			"network-button": "",
+			"bug-button": "",
+			"about-button": "Berty-ről"
+		},
+		"about": {
+			"faq-button": "",
+			"roadmap-button": "",
+			"policy-button": "",
+			"license-button": ""
+		},
+		"accounts": {
+			"accounts-button": "Fiókok",
+			"create-button": "",
+			"import-button": "",
+			"link-button": "",
+			"delete-button": ""
+		},
+		"appearance": {
+			"dark-button": "",
+			"editor-button": ""
+		},
+		"contact-convs": {
+			"reset-button": "",
+			"request-button": ""
+		},
+		"network": {
+			"ble-button": "",
+			"mc-button": "",
+			"nearby-button": "",
+			"mdns-button": "Multicast DNS",
+			"memo-cell-button": "",
+			"medias-cell-button": "",
+			"dht-button": "",
+			"rdvp-button": "",
+			"relay-button": "",
+			"bootstrap-button": ""
+		},
+		"edit-profile": {
+			"title": "Fiók szerkesztése",
+			"qr-will-update": "Az Ön Berty azonosítója (QR kód) frissítve lett",
+			"ocr-wont-update": "Függőben lévő kapcsolattartási kérelmei nem frissültek",
+			"save": "Változtatások mentése",
+			"cancel": "Mégse",
+			"name-input-placeholder": "Név...",
+			"name-input-label": "Név"
+		},
+		"berty-services": {
+			"title": "",
+			"desc": "",
+			"button": "",
+			"skip": "KIHAGYJA ÉS KÉSŐBB CSINÁLJA MEG"
+		},
+		"delete-account": {
+			"title": "Fiók törlése!",
+			"first-desc": "Biztosan törölné a fiókját?",
+			"desc": "A megerősítéshez írja be hogy \"delete\"",
+			"cancel-button": "MÉGSE",
+			"delete-button": "TÖRLÉS"
+		},
+		"faq": {
+			"title": ""
+		},
+		"roadmap": {
+			"title": ""
+		},
+		"privacy-policy": {
+			"title": ""
+		},
+		"devtools": {
+			"title": "Fejlesztői eszközök",
+			"header-left-button": "Eszköz információk",
+			"header-middle-button": "Hamis információ készítése",
+			"header-right-button": "Daemon újraindítása",
+			"simulate-button": "Stream hiba szimulálása",
+			"simulate-js-error-button": "JavaScript hiba szimulálása",
+			"system-info-button": "Rendszer információ",
+			"debug-button": "Hibakeresés",
+			"log-button": {
+				"name": "Naplózás formázása",
+				"bullet-point": "Módosítás után indítsa újra az alkalmazást"
+			},
+			"log-filters-button": {
+				"name": "Napló szűrők",
+				"bullet-point": "Módosítás után indítsa újra az alkalmazást"
+			},
+			"add-dev-conversations-button": "Fejlesztői beszélgetés hozzáadása",
+			"share-button": {
+				"title": "ID megosztása Discordon",
+				"alert-title": "Meg szeretné osztani QR-kódját a \"# dev-logs\"-al a Berty Discord szerveren?",
+				"alert-message": "Ez engedélyezni fogja több személy számára, hogy beolvassa a QR-kódját, vagy lemásolja a kapcsolati linkjét.",
+				"alert-accept-button": "Igen 👍",
+				"alert-cancel-button": "Nem"
+			},
+			"native-bridge-button": "Native Bridge tesztelése",
+			"dump-account-button": "Fiók kiírása",
+			"dump-contacts-button": "Kapcsolatok kiírása",
+			"dump-conversations-button": "Beszélgetések kiírása",
+			"dump-interactions-button": "Interakciók kiírása",
+			"dump-members-button": "Tagok kiírása",
+			"stop-node-button": "Node leállítása",
+			"local-grpc-button": "helyi gRPC",
+			"console-logs-button": "Konzol naplók",
+			"ipfs-webui-button": "IPFS WebUI",
+			"send-to-all-button": {
+				"title": "Üzenetek küldése minden kontaktnak",
+				"sending": "Küldés...",
+				"test": "Teszt, ",
+				"tried": "✔ {{length}} ismerősnek próbálkozott elküldeni"
+			},
+			"tyber-attach": "",
+			"tyber-host-button": {
+				"name": "Tyber",
+				"bullet-point": "Módosítás után indítsa újra az alkalmazást"
+			},
+			"footer-left-button": "Eszköz információk",
+			"footer-middle-button": "Események listája",
+			"footer-right-button": "Daemon újraindítása"
+		},
+		"system-info": {
+			"title": "Rendszer információ"
+		},
+		"fake-data": {
+			"title": "Hamis információ készítése",
+			"contacts-button": "Hamis kontaktok készítése",
+			"multi-members-button": "Álfelhasználók generálása csoportbeszélgetésekben",
+			"messages-button": "Hamis beszélgetés készítése",
+			"delete-button": "Hamis információ törlése"
+		},
+		"add-dev-conversations": {
+			"title": "Fejlesztői beszélgetés hozzáadása",
+			"add": "{{name}} hozzáadása"
+		},
+		"ipfs-webui": {
+			"title": "IPFS WebUI"
+		},
+		"theme-editor": {
+			"randomize": "Téma generálása",
+			"save": "Téma mentése",
+			"export": "Téma mentése mint fájl (exportálásra)",
+			"share": "Téma megosztása mint fájl",
+			"import": "Téma fájl importálása",
+			"delete": "",
+			"bad-format-title": "",
+			"bad-format-desc": "",
+			"notification-file-saved": {
+				"title": "Adatok elmentve!",
+				"desc": "Elérhető a letöltések mappában"
+			}
+		},
+		"my-berty-ID": {
+			"title": "",
+			"qr": "QR",
+			"fingerprint": "Ujjlenyomat"
+		},
+		"share": {
+			"invite": "",
+			"tap-to-scan": "",
+			"create-group": ""
+		}
+	},
+	"modals": {
+		"manage-deep-link": {
+			"invalid-link": "Érvénytelen link!",
+			"invalid-qr": "Érvénytelen QR kód!",
+			"error": "Hiba!",
+			"contact-already-added": "A kapcsolat már hozzá lett adva",
+			"contact-already-added-message": "Többször nem adhatja hozzá ugyanazt a névjegyet"
+		},
+		"invalid-scan": {
+			"dismiss-button": "ELUTASÍTÁS"
+		},
+		"add-this-contact": {
+			"fingerprint": "Ujjlenyomat",
+			"info": "Infó",
+			"devices": "Eszközök"
+		},
+		"group-invitation": {
+			"fingerprint": "Ujjlenyomat",
+			"info": "Infók",
+			"devices": "Eszközök",
+			"join": "",
+			"password-label": "",
+			"password-placeholder": ""
+		},
+		"save-theme": {
+			"title": "Téma mentése",
+			"desc": "Kérjük adjon a témának nevet!",
+			"placeholder": "A téma neve...",
+			"cancel": "MÉGSE",
+			"add": "Hozzáadás!"
+		}
+	},
+	"chat": {
+		"sending": "Küldés...",
+		"sent": "",
+		"contact-settings": {
+			"fingerprint": "Ujjlenyomat",
+			"info": "Infók",
+			"my-devices": ""
+		},
+		"multi-member": {
+			"input-placeholder": "Írjon ide..."
+		},
+		"push-notifications": {
+			"enable": "",
+			"enabled": "",
+			"unsupported": "",
+			"check-device-settings": "",
+			"warning-disable": {
+				"title": "",
+				"subtitle": "",
+				"accept": "",
+				"refuse": ""
+			},
+			"why-cant-disable": "",
+			"errors": {
+				"no-token": "",
+				"no-server": ""
+			}
+		},
+		"devices": {
+			"title": "Eszközök",
+			"push": {
+				"enabled": "",
+				"not-enabled": "Értesítések letiltva"
+			}
+		},
+		"multi-member-settings": {
+			"media-button": "Képek, linkek és dokumentumok",
+			"members-button": {
+				"title": "Tagok"
+			},
+			"add-member-button": "Résztvevők hozzáadása",
+			"invite-button": "Meghívás linken keresztül",
+			"save-button": "Beszélgetés mentése szerverre"
+		},
+		"add-members": {
+			"members": "Tagok",
+			"contacts": "Kapcsolatok",
+			"add": "Hozzáadás!"
+		},
+		"multi-member-qr": {
+			"title": "QR Csoport"
+		},
+		"one-to-one": {
+			"contact-request-box": {
+				"title": "KAPCSOLAT KÉRÉS",
+				"group-invitation": "",
+				"refuse-button": "ELUTASÍTÁS",
+				"accept-button": "ELFOGADÁS",
+				"accepted-button": "ELFOGADVA",
+				"error": "",
+				"you-invited": "",
+				"this-contact": "",
+				"to-a-group": ""
+			},
+			"infos-chat": {
+				"connection-confirmed": "👋 Berty kapcsolat megerősítve! 🎉",
+				"request-sent": "Kérés Elküldve ✈",
+				"incoming": "Elfogadja ezt a kérést a válaszhoz!",
+				"outgoing": "Várjuk a válaszod a kacsolódáshoz!"
+			},
+			"incoming-input-placeholder": "Fogadja el az írási kérelmet ide...",
+			"input-placeholder": "Írjon ide..."
+		},
+		"one-to-one-settings": {
+			"media-button": "Képek, linkek és dokumentumok",
+			"save-button": "Beszélgetés mentése szerverre"
+		},
+		"replicate-group-settings": {
+			"title": "Beszélgetés regisztrálása a szerveren",
+			"no-registered-button": "Nincs regisztrálva replikációs szolgáltatás",
+			"connect-button": "Kapcsolódás a Berty szolgáltatásához",
+			"manage-add-button": "Szolgáltatások kezelése és hozzáadása"
+		},
+		"files": {
+			"gallery": "Galéria",
+			"no-images": "",
+			"camera": "Kamera",
+			"files": "Fájlok",
+			"microphone": "Mikrofon",
+			"security-access": "Biztonsági Hozzáférés",
+			"security-access-desc": "Koppintson ide a beállítás megnyitásához, hogy engedélyezze",
+			"save-to-gallery": "Fájl mentése a Galériába",
+			"share": "Megosztás",
+			"forward-berty": "Továbbítás Berty-nek",
+			"forward": "Továbbítás",
+			"image-saved": "Kép mentve a galériába"
+		},
+		"shared-medias": {
+			"title": "Megosztott médiák",
+			"medias": "Médiák",
+			"links": "Hivatkozások",
+			"documents": "Dokumentumok"
+		},
+		"reply": {
+			"response-to": "Válasz neki",
+			"replying-to": "Válasz neki:",
+			"replied-to": "Válaszolt neki"
+		},
+		"user-message": {
+			"read-more": "",
+			"show-less": ""
+		},
+		"emojis": {
+			"matching": ""
+		}
+	},
+	"audio": {
+		"record": {
+			"tooltip": {
+				"usage": "Tartsa lenyomva felvételhez, engedje el a küldéshez",
+				"not-sent": "Hangüzenet nem lett elküldve",
+				"permission-denied": "Az alkalmazásnak nem engedélyezett a hangfelvétel"
+			},
+			"slide-to-cancel": "<< Csúsztatás a megszakításhoz",
+			"cancel-button": "Mégse"
+		}
+	},
+	"permission": {
+		"notification": {
+			"title": "",
+			"desc": "Berty-nek szükesége van az engedélyére, hogy helyi vagy push értesítéseket küldjön. Így értesül majd új üzenetk érkezéséről."
+		},
+		"proximity": {
+			"title": "",
+			"android-desc": "A hálózat nélküli Bluetooth-on keresztül, az alkalmazás háttérbehelyezésekor történő üzenetváltáshoz az Android API-nak szüksége van a lokalizáció használatának egedélyezésére. Elhelyezkedési adatait nem használjuk.",
+			"ios-desc": "Az internet nélküli, Bluetoothon keresztül való kommunikáláshoz, az iOS API-nak szüksége van az engedélyére."
+		},
+		"camera": {
+			"title": "Kamera",
+			"desc": ""
+		},
+		"audio": {
+			"title": "",
+			"desc": "A hangüzenetek küldéséhez engedélyeznie kell a mikrofon használatát."
+		},
+		"gallery": {
+			"title": "",
+			"desc": ""
+		},
+		"button-labels": {
+			"allow": "Engedélyezni",
+			"settings": "Ugorj a beállításokhoz"
+		},
+		"skip": "TOVÁBB",
+		"cancel": "MÉGSE",
+		"settings-text": "A Beállítások menüből engedélyezheti a {{title}}."
+	},
+	"notification": {
+		"need-restart": {
+			"title": "",
+			"desc": ""
+		},
+		"need-restart-ble": {
+			"title": "",
+			"desc": ""
+		}
+	},
+	"error": {
+		"labels": {
+			"bug": "Hiba észlelve",
+			"crash": "Összeomlás észlelve"
+		},
+		"restart-app": "App újraindítása",
+		"wtf-screen": {
+			"title": "Mi a probléma?",
+			"desc": "Az app éppen összeomlott.",
+			"desc-report": ""
+		},
+		"sorry-screen": {
+			"title": "Elnézést a hibáért!",
+			"desc": "Ez biztos Francis hibája, a Berty gyakornok fejlesztőjének, aki bizonyosan hibázott. Micsoda bunkó ez a Francis!",
+			"desc-em": "* Hát, oké, Francis nincs a Berty-nél.",
+			"desc-report": ""
+		}
+	},
+	"debug": {
+		"inspector": {
+			"show-button": "Alkalmazás ellenőr megjelenítése",
+			"hide-button": "Bezárás",
+			"title": "Ellenőr",
+			"accounts": {
+				"title": "Fiókok",
+				"unsupported-remote-mode": "A fiókellenőr távoli módban nem támogatott",
+				"data-not-found": "A fiók nem szerepel a listán",
+				"action-delete": {
+					"file-exists": "A {{accountId}} nevű fiók nem található, de létezik egy ilyen nevű fájl.",
+					"account-exists": "Már létezik fiók {{accountId}} néven.",
+					"fs-read-error": "Hiba történt a fiókkal kapcsolatos FS-információk lekérésekor",
+					"actions-title": "Mit kellene tennünk?",
+					"action-account-manager": "Törlés a fiókkezelővel",
+					"action-account-manager-confirm": "Fiók törlésének megerősítése",
+					"action-force-delete": "Kényszerített kitörlés",
+					"action-force-delete-confirm": "A fiók kényszerített törlésének megerősítése",
+					"error-close": "Hiba a fiók lezárásakor",
+					"error-delete": "Hiba a fiók törlésekor",
+					"success-feedback": "Fiók törölve",
+					"action-cancel": "Mégse"
+				},
+				"status": {
+					"datastore-found": "",
+					"datastore-not-found": "",
+					"ipfs-repo-found": "",
+					"ipfs-repo-not-found": "",
+					"messenger-db-found": "Messenger DB megtalálva",
+					"messenger-db-not-found": "Messenger DB nem található"
+				},
+				"infos": {
+					"aligned": {
+						"name": "Név: {{name}}",
+						"created": "Létrehozva: {{created}}",
+						"opened": "Megnyitva: {{opened}}",
+						"error": "Hiba: {{error}}"
+					}
+				}
+			},
+			"errors": {
+				"title": "Hibák",
+				"header-reported": "Hibák jelentve:",
+				"header-all-clear": "Nincs jelentett hiba",
+				"listing-files-failed": "Hiba történt a mappa tartalom listázásakor",
+				"listing-accounts-failed": "Hiba történt a fiókok listázásakor",
+				"listing-accounts-failed-grpc": "GRPC hiba történt a fiókok listázásakor"
+			},
+			"dump": {
+				"button": "Kiírja az app állapotát"
+			},
+			"refresh": "Frissítés",
+			"confirm-alert": {
+				"button-confirm": "Megerősítés",
+				"button-cancel": "Mégse"
+			}
+		}
+	}
+}

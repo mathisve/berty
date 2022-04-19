@@ -13,6 +13,7 @@ import (
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
+	"berty.tech/berty/v2/go/internal/cryptoutil"
 	"berty.tech/berty/v2/go/internal/sysutil"
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
@@ -38,7 +39,7 @@ func (s *service) DebugListGroups(req *protocoltypes.DebugListGroups_Request, sr
 			return errcode.ErrCryptoKeyGeneration.Wrap(err)
 		}
 
-		g, err := getGroupForContact(sk)
+		g, err := cryptoutil.GetGroupForContact(sk)
 		if err != nil {
 			return errcode.ErrOrbitDBOpen.Wrap(err)
 		}
@@ -69,7 +70,7 @@ func (s *service) DebugInspectGroupStore(req *protocoltypes.DebugInspectGroupSto
 		return errcode.ErrInvalidInput.Wrap(fmt.Errorf("invalid log type specified"))
 	}
 
-	cg, err := s.getContextGroupForID(req.GroupPK)
+	cg, err := s.GetContextGroupForID(req.GroupPK)
 	if err != nil {
 		return errcode.ErrInvalidInput.Wrap(err)
 	}
@@ -83,7 +84,7 @@ func (s *service) DebugInspectGroupStore(req *protocoltypes.DebugInspectGroupSto
 				nexts    = make([][]byte, len(e.GetNext()))
 			)
 
-			if evt, err := cg.messageStore.openMessage(srv.Context(), e, false); err != nil {
+			if evt, err := cg.messageStore.openMessage(srv.Context(), e); err != nil {
 				s.logger.Error("unable to open message", zap.Error(err))
 			} else {
 				devicePK = evt.Headers.DevicePK
@@ -213,8 +214,6 @@ func (s *service) SystemInfo(ctx context.Context, request *protocoltypes.SystemI
 		AccountMetadata: &protocoltypes.SystemInfo_OrbitDB_ReplicationStatus{
 			Progress: int64(status.GetProgress()),
 			Maximum:  int64(status.GetMax()),
-			Buffered: int64(status.GetBuffered()),
-			Queued:   int64(status.GetQueued()),
 		},
 	}
 	// FIXME: compute more stores

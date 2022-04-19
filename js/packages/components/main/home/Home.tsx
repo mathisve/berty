@@ -1,57 +1,92 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigation as useNativeNavigation } from '@react-navigation/native'
-import { BlurView } from '@react-native-community/blur'
-import { Translation } from 'react-i18next'
-import { ScrollView, Text as TextNative, View, StatusBar } from 'react-native'
-import { EdgeInsets, SafeAreaConsumer } from 'react-native-safe-area-context'
+import { useTranslation } from 'react-i18next'
+import { ScrollView, View, StatusBar, TouchableOpacity, SafeAreaView } from 'react-native'
 import pickBy from 'lodash/pickBy'
+import { Icon } from '@ui-kitten/components'
 
-import { ScreenProps } from '@berty-tech/navigation'
+import { ScreenFC } from '@berty/navigation'
+import { useNotificationsInhibitor, useThemeColor } from '@berty/store'
+import beapi from '@berty/api'
+import { useStyles } from '@berty/styles'
+import { AddBot } from '@berty/components/modals'
 import {
-	useConversationsCount,
+	useContactsDict,
+	useConversationsDict,
 	useIncomingContactRequests,
-	useMsgrContext,
-	useNotificationsInhibitor,
-	useSortedConversationList,
-} from '@berty-tech/store/hooks'
-import beapi from '@berty-tech/api'
-import { useStyles } from '@berty-tech/styles'
-import { AddBot } from '@berty-tech/components/modals'
-import { WelcomeConfiguration } from '@berty-tech/components/modals'
+	useAllConversations,
+} from '@berty/hooks'
 
 import { useLayout } from '../../hooks'
-import { SwipeNavRecognizer } from '../../shared-components/SwipeNavRecognizer'
-import EmptyChat from '../empty_chat.svg'
-import { HomeModal } from './HomeModal'
-import { Footer } from './Footer'
+import EmptyChat from '@berty/assets/logo/empty_chat.svg'
 import { IncomingRequests } from './Requests'
 import { Conversations } from './Conversations'
 import { SearchComponent } from './Search'
 import { HomeHeader } from './Header'
 import { MultiAccount } from './MultiAccount'
-import { PersistentOptionsKeys } from '@berty-tech/store/context'
+import { useSelector } from 'react-redux'
+import { selectClient } from '@berty/redux/reducers/ui.reducer'
+import { selectPersistentOptions } from '@berty/redux/reducers/persistentOptions.reducer'
+import { UnifiedText } from '../../shared-components/UnifiedText'
+import { ButtonSettingV2 } from '@berty/components/shared-components'
 
 const T = beapi.messenger.StreamEvent.Notified.Type
 
-export const Home: React.FC<ScreenProps.Main.Home> = () => {
-	useNotificationsInhibitor((_ctx, notif) =>
-		[T.TypeMessageReceived, T.TypeContactRequestReceived, T.TypeContactRequestSent].includes(
-			notif.type as any,
-		)
+const FooterButton: React.FC<{
+	name: string
+	fill: string
+	backgroundColor: string
+	onPress: () => Promise<void> | void
+}> = ({ name, fill, backgroundColor, onPress }) => {
+	const [{}, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+
+	return (
+		<TouchableOpacity
+			style={[
+				{
+					marginBottom: 20 * scaleSize,
+					width: 60,
+					height: 60,
+					borderRadius: 60,
+					shadowColor: colors.shadow,
+					shadowOffset: {
+						width: 0,
+						height: 5,
+					},
+					shadowOpacity: 0.2,
+					shadowRadius: 10,
+					elevation: 5,
+					backgroundColor,
+					alignItems: 'center',
+					justifyContent: 'center',
+				},
+			]}
+			onPress={onPress}
+		>
+			<Icon name={name} fill={fill} width={30 * scaleSize} height={30 * scaleSize} />
+		</TouchableOpacity>
+	)
+}
+
+export const Home: ScreenFC<'Main.Home'> = ({ navigation: { navigate } }) => {
+	useNotificationsInhibitor(notif =>
+		[
+			T.TypeMessageReceived,
+			T.TypeContactRequestReceived,
+			T.TypeContactRequestSent,
+			T.TypeGroupInvitation,
+		].includes(notif.type || T.Unknown)
 			? 'sound-only'
 			: false,
 	)
 	// TODO: do something to animate the requests
-	const requests: any[] = useIncomingContactRequests()
-	const conversations: any[] = useSortedConversationList()
-	const isConversation: number = useConversationsCount()
+	const requests = useIncomingContactRequests()
+	const conversations = useAllConversations()
+	const hasConversations = conversations.length > 0
 	const [layoutRequests, onLayoutRequests] = useLayout()
-	const [, onLayoutHeader] = useLayout()
-	const [, onLayoutConvs] = useLayout()
 	const [isOnTop, setIsOnTop] = useState<boolean>(false)
 	const [searchText, setSearchText] = useState<string>('')
 	const [refresh, setRefresh] = useState<boolean>(false)
-	const [isModalVisible, setModalVisibility] = useState<boolean>(false)
 	const [isAddBot, setIsAddBot] = useState({
 		link: '',
 		displayName: '',
@@ -60,15 +95,13 @@ export const Home: React.FC<ScreenProps.Main.Home> = () => {
 
 	const [isLongPress, setIsLongPress] = useState<boolean>(false)
 
-	const { navigate } = useNativeNavigation()
-	const { client } = useMsgrContext()
+	const client = useSelector(selectClient)
 
-	const [
-		{ text, opacity, flex, margin, background },
-		{ windowHeight, scaleSize, scaleHeight },
-	] = useStyles()
+	const [{ text, opacity, flex, margin, border }, { scaleSize, scaleHeight }] = useStyles()
+	const colors = useThemeColor()
+	const { t }: any = useTranslation()
+
 	const scrollRef = useRef<ScrollView>(null)
-
 	const searching = !!searchText
 	const lowSearchText = searchText.toLowerCase()
 	const searchCheck = React.useCallback(
@@ -77,39 +110,43 @@ export const Home: React.FC<ScreenProps.Main.Home> = () => {
 		[lowSearchText],
 	)
 
-	const ctx = useMsgrContext()
-	const suggestions = Object.values(ctx.persistentOptions?.suggestions).filter(
+	const persistentOptions = useSelector(selectPersistentOptions)
+	const suggestions = Object.values(persistentOptions?.suggestions).filter(
 		(i: any) => i.state === 'unread',
 	)
-	const configurations = Object.values(ctx.persistentOptions?.configurations).filter(
+	const configurations = Object.values(persistentOptions?.configurations).filter(
 		(i: any) => i.state === 'unread',
 	)
 	const hasSuggestion: number = suggestions.length
 	const hasConfigurations: number = configurations.length
 
+	const conversationsDict = useConversationsDict()
+
 	const searchConversations = React.useMemo(
 		() =>
 			searching
 				? pickBy(
-						ctx.conversations,
-						(val: any) =>
-							val.type === beapi.messenger.Conversation.Type.MultiMemberType &&
-							searchCheck(val.displayName),
+						conversationsDict,
+						val =>
+							val?.type === beapi.messenger.Conversation.Type.MultiMemberType &&
+							searchCheck(val?.displayName),
 				  )
 				: {},
-		[ctx.conversations, searchCheck, searching],
+		[conversationsDict, searchCheck, searching],
 	)
 
+	const contacts = useContactsDict()
+
 	const searchContacts = React.useMemo(
-		() => (searching ? pickBy(ctx.contacts, (val: any) => searchCheck(val.displayName)) : {}),
-		[ctx.contacts, searchCheck, searching],
+		() => (searching ? pickBy(contacts, (val: any) => searchCheck(val.displayName)) : {}),
+		[contacts, searchCheck, searching],
 	)
 
 	const searchInteractions = React.useRef<beapi.messenger.IInteraction[]>([])
 	const [earliestResult, setEarliestResult] = React.useState('')
 
 	useEffect(() => {
-		let cancelled = false
+		let canceled = false
 		searchInteractions.current = []
 
 		if (searchText.trim() === '') {
@@ -117,10 +154,10 @@ export const Home: React.FC<ScreenProps.Main.Home> = () => {
 		}
 
 		;(async () => {
-			await new Promise((resolve) => {
+			await new Promise(resolve => {
 				setTimeout(() => resolve(true), 200)
 			})
-			if (cancelled) {
+			if (canceled) {
 				return
 			}
 
@@ -135,10 +172,10 @@ export const Home: React.FC<ScreenProps.Main.Home> = () => {
 					})
 
 					if (!results || results.results.length === 0) {
-						cancelled = true
+						canceled = true
 					}
 
-					if (cancelled) {
+					if (canceled) {
 						return
 					}
 
@@ -148,188 +185,158 @@ export const Home: React.FC<ScreenProps.Main.Home> = () => {
 					// TODO: remove this loop, add loading on scroll
 				}
 			} catch (e) {
-				cancelled = true
+				canceled = true
 				console.warn(e)
 			}
 		})()
 
 		return () => {
-			cancelled = true
+			canceled = true
 		}
 	}, [client, searchInteractions, searchText])
 
-	const hasResults = [searchConversations, searchContacts, searchInteractions].some(
-		(c) => Object.keys(c).length > 0,
+	const hasResults = [searchConversations, searchContacts, searchInteractions.current].some(
+		c => Object.keys(c).length > 0,
 	)
 	const styleBackground = useMemo(
-		() => (requests.length > 0 && !searchText?.length ? background.blue : background.white),
-		[background.blue, background.white, requests.length, searchText],
+		() =>
+			requests.length > 0 && !searchText?.length
+				? { backgroundColor: colors['background-header'] }
+				: { backgroundColor: colors['main-background'] },
+		[requests.length, searchText, colors],
 	)
 
 	return (
-		<>
-			<Translation>
-				{(t: any): React.ReactNode => (
-					<View style={[flex.tiny, styleBackground]}>
-						<StatusBar backgroundColor='white' barStyle='dark-content' />
-						<SwipeNavRecognizer onSwipeLeft={() => !isModalVisible && navigate('Settings.Home')}>
-							<SafeAreaConsumer>
-								{(insets: EdgeInsets | null) => (
-									<>
-										<ScrollView
-											ref={scrollRef}
-											stickyHeaderIndices={!searchText?.length && !hasResults ? [1] : [0]}
-											showsVerticalScrollIndicator={false}
-											scrollEventThrottle={16}
-											keyboardShouldPersistTaps={'handled'}
-											onScrollEndDrag={(e) => {
-												if (e.nativeEvent.contentOffset.y < 0) {
-													setRefresh(true)
-												}
-											}}
-											onScroll={(e) => {
-												if (e.nativeEvent.contentOffset) {
-													if (e.nativeEvent.contentOffset.y >= layoutRequests.height) {
-														setIsOnTop(true)
-													} else {
-														setIsOnTop(false)
-													}
-												}
-											}}
+		<View style={[styleBackground, { flex: 1 }]}>
+			<SafeAreaView>
+				<StatusBar
+					backgroundColor={
+						requests.length && !isOnTop ? colors['background-header'] : colors['main-background']
+					}
+					barStyle={requests.length && !isOnTop ? 'light-content' : 'dark-content'}
+				/>
+			</SafeAreaView>
+			<ScrollView
+				ref={scrollRef}
+				stickyHeaderIndices={!searchText?.length && !hasResults ? [1] : [0]}
+				showsVerticalScrollIndicator={false}
+				scrollEventThrottle={16}
+				contentContainerStyle={{ flexGrow: 1 }}
+				keyboardShouldPersistTaps={'handled'}
+				onScrollEndDrag={e => {
+					if (e.nativeEvent.contentOffset.y < 0) {
+						setRefresh(true)
+					}
+				}}
+				onScroll={e => {
+					if (e.nativeEvent.contentOffset) {
+						if (e.nativeEvent.contentOffset.y >= layoutRequests.height) {
+							setIsOnTop(true)
+						} else {
+							setIsOnTop(false)
+						}
+					}
+				}}
+			>
+				{!searchText?.length ? (
+					<IncomingRequests items={requests} onLayout={onLayoutRequests} />
+				) : null}
+				<HomeHeader
+					isOnTop={isOnTop}
+					hasRequests={requests.length > 0}
+					scrollRef={scrollRef}
+					value={searchText}
+					onChange={setSearchText}
+					refresh={refresh}
+					setRefresh={setRefresh}
+					onLongPress={setIsLongPress}
+					isMultiAccount={isLongPress}
+				/>
+				{searchText?.length ? (
+					<>
+						{(searchText.startsWith('https://berty.tech/id') ||
+							searchText.startsWith('berty://')) && (
+							<View style={[{ flexDirection: 'row', justifyContent: 'center' }]}>
+								<View style={[border.shadow.large, border.radius.medium]}>
+									<ButtonSettingV2
+										text='Open Berty Link'
+										icon='external-link-outline'
+										onPress={() =>
+											navigate('Modals.ManageDeepLink', { type: 'link', value: searchText })
+										}
+									/>
+								</View>
+							</View>
+						)}
+						<SearchComponent
+							insets={null}
+							conversations={searchConversations}
+							contacts={searchContacts}
+							interactions={searchInteractions.current}
+							value={searchText}
+							hasResults={hasResults}
+							earliestInteractionCID={earliestResult}
+						/>
+					</>
+				) : (
+					<View style={{ height: '100%' }}>
+						<Conversations
+							items={conversations}
+							suggestions={suggestions}
+							configurations={configurations}
+							addBot={setIsAddBot}
+						/>
+						{!hasConversations && !hasSuggestion && !hasConfigurations ? (
+							<View style={{ backgroundColor: colors['main-background'] }}>
+								<View style={[flex.justify.center, flex.align.center, margin.top.scale(60)]}>
+									<View>
+										<EmptyChat width={350 * scaleSize} height={350 * scaleHeight} />
+										<UnifiedText
+											style={[
+												text.align.center,
+												text.color.grey,
+												text.light,
+												opacity(0.3),
+												margin.top.big,
+											]}
 										>
-											{!searchText?.length && (
-												<IncomingRequests items={requests} onLayout={onLayoutRequests} />
-											)}
-											<HomeHeader
-												isOnTop={isOnTop}
-												hasRequests={requests.length > 0}
-												scrollRef={scrollRef}
-												onLayout={onLayoutHeader}
-												value={searchText}
-												onChange={setSearchText}
-												refresh={refresh}
-												setRefresh={setRefresh}
-												onLongPress={setIsLongPress}
-												isMultiAccount={isLongPress}
-											/>
-											{searchText?.length ? (
-												<SearchComponent
-													insets={insets}
-													conversations={searchConversations}
-													contacts={searchContacts}
-													interactions={searchInteractions.current}
-													value={searchText}
-													hasResults={hasResults}
-													earliestInteractionCID={earliestResult}
-												/>
-											) : (
-												<>
-													<Conversations
-														items={conversations}
-														suggestions={suggestions}
-														configurations={configurations}
-														onLayout={onLayoutConvs}
-														addBot={setIsAddBot}
-													/>
-													{!isConversation && !hasSuggestion && !hasConfigurations && (
-														<View style={[background.white]}>
-															<View
-																style={[
-																	flex.justify.center,
-																	flex.align.center,
-																	margin.top.scale(60),
-																]}
-															>
-																<View>
-																	<EmptyChat width={350 * scaleSize} height={350 * scaleHeight} />
-																	<TextNative
-																		style={[
-																			text.align.center,
-																			text.color.grey,
-																			text.bold.small,
-																			opacity(0.3),
-																			margin.top.big,
-																		]}
-																	>
-																		{t('main.home.no-contacts')}
-																	</TextNative>
-																</View>
-															</View>
-														</View>
-													)}
-													{requests.length > 0 && (
-														<View
-															style={[
-																{
-																	backgroundColor: 'white',
-																	position: 'absolute',
-																	bottom: windowHeight * -1,
-																	height: windowHeight,
-																	width: '100%',
-																},
-															]}
-														/>
-													)}
-												</>
-											)}
-										</ScrollView>
-										{isModalVisible && (
-											<>
-												<BlurView
-													blurType='light'
-													style={{
-														position: 'absolute',
-														left: 0,
-														right: 0,
-														top: 0,
-														bottom: 0,
-														height: windowHeight,
-													}}
-												/>
-												<HomeModal closeModal={() => setModalVisibility(false)} />
-											</>
-										)}
-
-										{!searchText?.length && (
-											<Footer
-												openModal={() => setModalVisibility(true)}
-												isModalVisible={isModalVisible}
-											/>
-										)}
-										{isAddBot.isVisible && (
-											<AddBot
-												link={isAddBot.link}
-												displayName={isAddBot.displayName}
-												closeModal={() => setIsAddBot({ ...isAddBot, isVisible: false })}
-											/>
-										)}
-
-										{ctx.persistentOptions.welcomeModal.enable && (
-											<WelcomeConfiguration
-												closeModal={async () => {
-													await ctx.setPersistentOption({
-														type: PersistentOptionsKeys.WelcomeModal,
-														payload: { enable: false },
-													})
-												}}
-											/>
-										)}
-										{isLongPress && (
-											<MultiAccount
-												onPress={() => {
-													setIsLongPress(false)
-												}}
-											/>
-										)}
-									</>
-								)}
-							</SafeAreaConsumer>
-						</SwipeNavRecognizer>
+											{t('main.home.no-contacts')}
+										</UnifiedText>
+									</View>
+								</View>
+							</View>
+						) : null}
 					</View>
 				)}
-			</Translation>
-		</>
+			</ScrollView>
+			<View
+				style={{
+					position: 'absolute',
+					right: 20 * scaleSize,
+					bottom: 20 * scaleSize,
+				}}
+			>
+				<FooterButton
+					name='plus'
+					fill={colors['reverted-main-text']}
+					backgroundColor={colors['background-header']}
+					onPress={() => navigate('Main.Share')}
+				/>
+			</View>
+			{isLongPress ? (
+				<MultiAccount
+					onPress={() => {
+						setIsLongPress(false)
+					}}
+				/>
+			) : null}
+			{isAddBot.isVisible ? (
+				<AddBot
+					link={isAddBot.link}
+					displayName={isAddBot.displayName}
+					closeModal={() => setIsAddBot({ ...isAddBot, isVisible: false })}
+				/>
+			) : null}
+		</View>
 	)
 }
-
-export default Home

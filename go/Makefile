@@ -2,17 +2,29 @@
 ## Config
 ##
 
-
 GO ?= go
 GOPATH ?= $(HOME)/go
-GO_TAGS ?= -tags fts5
+GO_TAGS ?= -tags "fts5 sqlite sqlite_unlock_notify"
 GO_TEST_OPTS ?= -test.timeout=300s -race -cover -coverprofile=coverage.txt -covermode=atomic $(GO_TAGS)
 GO_TEST_PATH ?= ./...
+GO_TEST_ENV ?=
 
 BUILD_DATE ?= `date +%s`
 VCS_REF ?= `git rev-parse --short HEAD`
 VERSION ?= `go run github.com/mdomke/git-semver/v5`
 LDFLAGS ?= -ldflags="-X berty.tech/berty/v2/go/pkg/bertyversion.VcsRef=$(VCS_REF) -X berty.tech/berty/v2/go/pkg/bertyversion.Version=$(VERSION)"
+
+# @FIXME(gfanton): on macOS Monterey (12.0.x) we currently need to set the
+# environment variable `MallocNanoZone` to 0 to avoid a SIGABRT or SIGSEGV
+# see https://github.com/golang/go/issues/49138
+MACOS_VERSION=$(shell defaults read /System/Library/CoreServices/SystemVersion.plist 'ProductVersion' 2>/dev/null | sed 's/\.[0-9]$$//')
+ifeq ($(MACOS_VERSION),12.0)
+GO_TEST_ENV := MallocNanoZone=0 $(GO_TEST_ENV)
+endif
+
+ifeq ($(MACOS_VERSION),12.1)
+GO_TEST_ENV := MallocNanoZone=0 $(GO_TEST_ENV)
+endif
 
 ##
 ## General rules
@@ -70,6 +82,9 @@ lint: go.lint
 .PHONY: lint
 
 
+lint.fix: go.fmt
+.PHONY: lint.fix
+
 ##
 ## Other rules
 ##
@@ -77,12 +92,10 @@ lint: go.lint
 
 check-program = $(foreach exec,$(1),$(if $(shell PATH="$(PATH)" which $(exec)),,$(error "No $(exec) in PATH")))
 
-
 go.tidy: pb.generate
 	$(call check-program, $(GO))
 	GO111MODULE=on $(GO) mod tidy
 .PHONY: go.tidy
-
 
 go.lint: pb.generate
 	$(call check-program, golangci-lint)
@@ -96,11 +109,14 @@ go.unittest: pb.generate
 .PHONY: go.unittest
 
 
-go.unstable-tests: pb.generate
-	TEST_STABILITY=unstable go run moul.io/testman test -v -timeout=600s -retry=10 -run ^TestUnstable ./pkg/bertymessenger
-	TEST_STABILITY=unstable go run moul.io/testman test -v -test.v -timeout=600s -retry=10 -run ^TestScenario_ ./pkg/bertyprotocol # FIXME: run on other unstable functions too
+go.flappy-tests: pb.generate
+	TEST_STABILITY=flappy go run moul.io/testman test -v -test.v -timeout=600s -retry=10 -run ^TestFlappy    ./pkg/bertymessenger
+	TEST_STABILITY=flappy go run moul.io/testman test -v -test.v -timeout=600s -retry=10 -run ^TestFlappy    ./pkg/bertybot
+	TEST_STABILITY=flappy go run moul.io/testman test -v -test.v -timeout=600s -retry=10 -run ^TestFlappy    ./pkg/bertyprotocol
+	TEST_STABILITY=flappy go run moul.io/testman test -v -test.v -timeout=600s -retry=10 -run ^TestScenario_ ./pkg/bertyprotocol
+	TEST_STABILITY=flappy go run moul.io/testman test -v -test.v -timeout=600s -retry=10 -run ^TestFlappy    ./internal/tinder
 	# FIXME: run on other packages too
-.PHONY: go.unstable-tests
+.PHONY: go.flappy-tests
 
 
 go.broken-tests: pb.generate
@@ -165,14 +181,14 @@ $(gen_sum): $(gen_src)
 	  set -xe; \
 	  $(GO) mod download; \
 	  docker run \
-	    --user="$$uid" \
-	    --volume="`go env GOPATH`/pkg/mod:/go/pkg/mod" \
-	    --volume="$(PWD)/..:/go/src/berty.tech/berty" \
-	    --workdir="/go/src/berty.tech/berty/go" \
-	    --entrypoint="sh" \
-	    --rm \
-	    bertytech/protoc:27 \
-	    -xec 'make generate_local'; \
+		--user="$$uid" \
+		--volume="`go env GOPATH`/pkg/mod:/go/pkg/mod" \
+		--volume="$(PWD)/..:/go/src/berty.tech/berty" \
+		--workdir="/go/src/berty.tech/berty/go" \
+		--entrypoint="sh" \
+		--rm \
+		bertytech/protoc:28 \
+		-xec 'make generate_local'; \
 	  $(MAKE) tidy \
 	)
 .PHONY: pb.generate
@@ -180,18 +196,23 @@ $(gen_sum): $(gen_src)
 
 generate_local:
 	$(call check-program, shasum protoc)
+	$(GO) run github.com/buicongtan1997/protoc-gen-swagger-config -i ../api/accounttypes.proto -o ../api/accounttypes.yaml
 	$(GO) run github.com/buicongtan1997/protoc-gen-swagger-config -i ../api/messengertypes.proto -o ../api/messengertypes.yaml
 	$(GO) run github.com/buicongtan1997/protoc-gen-swagger-config -i ../api/protocoltypes.proto -o ../api/protocoltypes.yaml
 	$(GO) run github.com/buicongtan1997/protoc-gen-swagger-config -i ../api/bertyreplication.proto -o ../api/bertyreplication.yaml
+	$(GO) run github.com/buicongtan1997/protoc-gen-swagger-config -i ../api/pushtypes.proto -o ../api/pushtypes.yaml
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/errcode.proto
-	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/bertyaccount.proto
+	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/accounttypes.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/bertybridge.proto
+	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/pushtypes.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/go-internal/testutil.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/go-internal/records.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src ../api/go-internal/handshake.proto
+	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src --grpc-gateway_out=logtostderr=true,grpc_api_configuration=../api/accounttypes.yaml:$(GOPATH)/src ../api/accounttypes.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src --grpc-gateway_out=logtostderr=true,grpc_api_configuration=../api/protocoltypes.yaml:$(GOPATH)/src ../api/protocoltypes.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src --grpc-gateway_out=logtostderr=true,grpc_api_configuration=../api/messengertypes.yaml:$(GOPATH)/src ../api/messengertypes.proto
 	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src --grpc-gateway_out=logtostderr=true,grpc_api_configuration=../api/bertyreplication.yaml:$(GOPATH)/src ../api/bertyreplication.proto
+	protoc $(protoc_opts) --gogo_out=plugins=grpc:$(GOPATH)/src --grpc-gateway_out=logtostderr=true,grpc_api_configuration=../api/pushtypes.yaml:$(GOPATH)/src ../api/pushtypes.proto
 	sed -i s@berty.tech/berty/go@berty.tech/berty/v2/go@ ./pkg/*/*.pb.go
 	sed -i s@berty.tech/berty/go@berty.tech/berty/v2/go@ ./pkg/*/*.pb.gw.go
 	$(MAKE) go.fmt
@@ -201,7 +222,8 @@ generate_local:
 
 
 go.fmt:
-	go run github.com/daixiang0/gci -w -local berty.tech .
+	go run github.com/daixiang0/gci write \
+		--Section Standard --Section Default --Section 'Prefix(berty.tech)' .
 	go run mvdan.cc/gofumpt -w -s .
 .PHONY: go.fmt
 
@@ -252,8 +274,8 @@ md.generate: install
 		(rdvp $$sub -h || true) 2>> .tmp/rdvp-usage.txt; \
 	done
 
-	echo 'foo@bar:~$$ betabot -h' > .tmp/betabot-usage.txt
-	(betabot -h || true) 2>> .tmp/betabot-usage.txt
+	echo 'foo@bar:~$$ welcomebot -h' > .tmp/welcomebot-usage.txt
+	(welcomebot -h || true) 2>> .tmp/welcomebot-usage.txt
 
 	# FIXME: generate output for berty mini
 
@@ -267,10 +289,10 @@ md.generate: install
 ##
 
 
-depaware.generate: ./cmd/berty/depaware.txt
+depaware.generate: ./cmd/*/depaware.txt
 .PHONY: depaware.generate
 
-depaware_pkgs = ./cmd/berty ./cmd/rdvp ./framework/bertybridge ./cmd/betabot  ./cmd/berty-doctor ./cmd/berty-integration
+depaware_pkgs = ./cmd/berty ./cmd/rdvp ./framework/bertybridge ./cmd/welcomebot  ./cmd/berty-doctor ./cmd/berty-integration
 ./cmd/*/depaware.txt: ../go.sum
 	@set -xe; for pkg in $(depaware_pkgs); do $(GO) run github.com/tailscale/depaware --update $$pkg; done
 

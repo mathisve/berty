@@ -1,41 +1,70 @@
 import React from 'react'
-import { View, ScrollView, ActivityIndicator } from 'react-native'
-import { Layout, Text } from '@ui-kitten/components'
-import { useTranslation } from 'react-i18next'
-import { useStyles } from '@berty-tech/styles'
-import { HeaderSettings } from '../shared-components/Header'
-import { ScreenProps, useNavigation } from '@berty-tech/navigation'
-import messengerMethodsHooks from '@berty-tech/store/methods'
+import { View, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native'
+import { Layout, Icon } from '@ui-kitten/components'
 
-export const SystemInfo: React.FC<ScreenProps.Settings.SystemInfo> = () => {
-	const { goBack } = useNavigation()
-	const [{ background, flex, color, padding }] = useStyles()
+import beapi from '@berty/api'
+import { useStyles } from '@berty/styles'
+import { ScreenFC } from '@berty/navigation'
+import messengerMethodsHooks from '@berty/store/methods'
+import { useMountEffect, useThemeColor, accountService } from '@berty/store'
+import { UnifiedText } from '../shared-components/UnifiedText'
+
+export const SystemInfo: ScreenFC<'Settings.SystemInfo'> = ({ navigation }) => {
+	const [{ padding }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
 	const { reply: systemInfo, done, error, call } = messengerMethodsHooks.useSystemInfo()
-	const { t } = useTranslation()
+	const [networkConfig, setNetworkConfig] = React.useState<beapi.account.INetworkConfig | null>(
+		null,
+	)
+
+	useMountEffect(() => {
+		const getNetworkConfig = async () => {
+			// with an empty accountId the function returns default config
+			const defaultConfig = await accountService.networkConfigGet({ accountId: '' })
+			console.log('defaultConfig', defaultConfig.currentConfig)
+			if (defaultConfig.currentConfig) {
+				setNetworkConfig(defaultConfig?.currentConfig)
+			}
+		}
+
+		getNetworkConfig()
+	})
 
 	React.useEffect(() => {
 		call()
 	}, [call])
 
+	React.useLayoutEffect(() => {
+		navigation.setOptions({
+			headerRight: () => (
+				<TouchableOpacity onPress={() => call()}>
+					<Icon
+						name='refresh-outline'
+						width={30 * scaleSize}
+						height={30 * scaleSize}
+						fill={colors['reverted-main-text']}
+					/>
+				</TouchableOpacity>
+			),
+		})
+	})
+
 	return (
-		<Layout style={[background.white, flex.tiny]}>
+		<Layout style={{ flex: 1, backgroundColor: colors['main-background'] }}>
 			<ScrollView bounces={false} contentContainerStyle={padding.bottom.scale(90)}>
-				<HeaderSettings
-					title={t('settings.system-info.title')}
-					bgColor={color.dark.grey}
-					undo={goBack}
-					actionIcon='refresh-outline'
-					action={call}
-				/>
 				{done ? (
 					error ? (
 						<View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>
-							<Text style={{ color: 'red' }}>{error.toString()}</Text>
+							<UnifiedText style={{ color: colors['warning-asset'] }}>
+								{error.toString()}
+							</UnifiedText>
 						</View>
 					) : (
-						<Text selectable={true} style={{ height: '95%' }}>
+						<UnifiedText selectable={true} style={{ height: '95%' }}>
 							{JSON.stringify(systemInfo, null, 2)}
-						</Text>
+							{'\n'}
+							{JSON.stringify(networkConfig, null, 2)}
+						</UnifiedText>
 					)
 				) : (
 					<View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>

@@ -1,12 +1,15 @@
 import React from 'react'
 import { View } from 'react-native'
-import { Icon, Text } from '@ui-kitten/components'
+import { Icon } from '@ui-kitten/components'
 
-import { useStyles } from '@berty-tech/styles'
-import beapi from '@berty-tech/api'
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store/hooks'
+import beapi from '@berty/api'
+import { pbDateToNum } from '@berty/store/convert'
 
-import { pbDateToNum, timeFormat } from '../../helpers'
-import { InteractionMonitorMetadata } from '@berty-tech/store/types.gen'
+import { timeFormat } from '../../helpers'
+import { InteractionMonitorMetadata } from '@berty/store/types.gen'
+import { UnifiedText } from '../../shared-components/UnifiedText'
 
 const eventMonitorTypes = beapi.protocol.MonitorGroup.TypeEventMonitor
 
@@ -14,9 +17,10 @@ export const MessageMonitorMetadata: React.FC<{ inte: InteractionMonitorMetadata
 	inte,
 }) => {
 	const [{ padding, text, margin }] = useStyles()
+	const colors = useThemeColor()
 	const sentDate = pbDateToNum(inte?.sentDate)
 
-	const me = inte.payload.event
+	const me = inte.payload?.event
 
 	let monitorPayloadTitle: string
 	let monitorPayloadSubtitle: string[] | undefined
@@ -49,9 +53,9 @@ export const MessageMonitorMetadata: React.FC<{ inte: InteractionMonitorMetadata
 			break
 		case eventMonitorTypes.TypeEventMonitorPeerLeave:
 			if (me.peerLeave?.isSelf) {
-				monitorPayloadTitle = 'you just leaved this group'
+				monitorPayloadTitle = 'you just left this group'
 			} else {
-				monitorPayloadTitle = `peer leaved ${me.peerLeave?.peerId?.substr(
+				monitorPayloadTitle = `peer left ${me.peerLeave?.peerId?.substr(
 					me.peerLeave.peerId.length - 10,
 				)}`
 			}
@@ -73,45 +77,40 @@ export const MessageMonitorMetadata: React.FC<{ inte: InteractionMonitorMetadata
 						margin.bottom.small,
 					]}
 				>
-					<Icon name='monitor-outline' fill='#4E58BF' width={25} height={25} />
+					<Icon name='monitor-outline' fill={colors['background-header']} width={25} height={25} />
 				</View>
-				<Text
-					style={[
-						{ textAlign: 'left', fontFamily: 'Open Sans', color: '#4E58BF' },
-						text.bold.small,
-						text.italic,
-						text.size.scale(14),
-					]}
+				<UnifiedText
+					style={[text.lightItalic, { textAlign: 'left', color: colors['background-header'] }]}
 				>
 					{monitorPayloadTitle}
-				</Text>
+				</UnifiedText>
 
 				{monitorPayloadSubtitle &&
 					monitorPayloadSubtitle.map((subtitle: string, index: number) => (
-						<Text
+						<UnifiedText
 							key={index}
 							style={[
-								{ textAlign: 'left', fontFamily: 'Open Sans', color: '#4E58BF' },
-								text.bold.small,
-								text.italic,
-								text.size.scale(14),
+								{
+									textAlign: 'left',
+									color: colors['background-header'],
+								},
+								text.lightItalic,
 								margin.top.tiny,
 							]}
 						>
 							{subtitle}
-						</Text>
+						</UnifiedText>
 					))}
 			</View>
-			<Text
+			<UnifiedText
 				style={[
-					{ fontFamily: 'Open Sans', alignSelf: 'flex-end', color: '#4E58BF' },
-					text.bold.small,
-					text.italic,
+					{ alignSelf: 'flex-end', color: colors['background-header'] },
+					text.lightItalic,
 					text.size.small,
 				]}
 			>
 				{timeFormat.fmtTimestamp3(sentDate)}
-			</Text>
+			</UnifiedText>
 		</View>
 	)
 }

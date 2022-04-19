@@ -53,10 +53,11 @@ func mediaSliceFilterForNetwork(dbMedias []*Media) []*Media {
 	networkMedias := make([]*Media, len(dbMedias))
 	for i, dbMedia := range dbMedias {
 		networkMedias[i] = &Media{
-			CID:         dbMedia.GetCID(),
-			MimeType:    dbMedia.GetMimeType(),
-			Filename:    dbMedia.GetFilename(),
-			DisplayName: dbMedia.GetDisplayName(),
+			CID:           dbMedia.GetCID(),
+			MimeType:      dbMedia.GetMimeType(),
+			Filename:      dbMedia.GetFilename(),
+			DisplayName:   dbMedia.GetDisplayName(),
+			MetadataBytes: dbMedia.GetMetadataBytes(),
 		}
 	}
 	return networkMedias
@@ -97,11 +98,15 @@ func UnmarshalAppMessage(payload []byte) (proto.Message, AppMessage, error) {
 	var am AppMessage
 	err := proto.Unmarshal(payload, &am)
 	if err != nil {
-		return nil, AppMessage{}, err
+		return nil, AppMessage{}, errcode.ErrDeserialization.Wrap(err)
 	}
 
 	msg, err := am.UnmarshalPayload()
-	return msg, am, err
+	if err != nil {
+		return nil, AppMessage{}, errcode.ErrDeserialization.Wrap(err)
+	}
+
+	return msg, am, nil
 }
 
 func (event *StreamEvent) UnmarshalPayload() (proto.Message, error) {
@@ -226,9 +231,5 @@ func (am *AppMessage) TextRepresentation() (string, error) {
 }
 
 func (m *AppMessage_UserMessage) TextRepresentation() (string, error) {
-	return m.Body, nil
-}
-
-func (m *AppMessage_UserMessage) TextStrippedPayload() (proto.Message, error) {
-	return &AppMessage_UserMessage{}, nil
+	return m.GetBody(), nil
 }

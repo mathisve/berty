@@ -1,37 +1,63 @@
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Alert, ScrollView, StatusBar, Vibration, View } from 'react-native'
+import { Layout } from '@ui-kitten/components'
+import { useTranslation } from 'react-i18next'
+import Long from 'long'
+
 import {
-	Alert,
-	ScrollView,
-	TextInput,
-	TouchableOpacity,
-	Vibration,
-	View,
-	StatusBar,
-} from 'react-native'
-import { DropDownPicker } from '@berty-tech/components/shared-components/DropDownPicker'
-import { Layout, Icon } from '@ui-kitten/components'
-import { Translation, useTranslation } from 'react-i18next'
-import { useStyles } from '@berty-tech/styles'
-import { useNavigation as useNativeNavigation } from '@react-navigation/native'
-import { HeaderSettings } from '../shared-components/Header'
+	GlobalPersistentOptionsKeys,
+	storageGet,
+	storageSet,
+	useMessengerClient,
+	useThemeColor,
+} from '@berty/store'
+import { useStyles } from '@berty/styles'
+import { ScreenFC, useNavigation } from '@berty/navigation'
+import * as middleware from '@berty/grpc-bridge/middleware'
+import beapi from '@berty/api'
+import { bridge as rpcBridge } from '@berty/grpc-bridge/rpc'
+import { Service } from '@berty/grpc-bridge'
+import GoBridge from '@berty/go-bridge'
+import messengerMethodsHooks from '@berty/store/methods'
+import { languages } from '@berty/i18n/locale/languages'
+import i18n from '@berty/i18n'
+import { setAccountLanguage } from '@berty/redux/reducers/accountSettings.reducer'
+import {
+	useAllConversations,
+	useAllInteractions,
+	useAppDispatch,
+	useAppSelector,
+	useContactsDict,
+	useConversationsDict,
+	useAccount,
+	usePlaySound,
+	useRestart,
+} from '@berty/hooks'
+import { Player } from '@react-native-community/audio-toolkit'
+
 import {
 	ButtonSetting,
 	ButtonSettingItem,
 	ButtonSettingRow,
+	StringOptionInput,
 } from '../shared-components/SettingsButtons'
-import { ScreenProps, useNavigation } from '@berty-tech/navigation'
-import * as middleware from '@berty-tech/grpc-bridge/middleware'
-import beapi from '@berty-tech/api'
-import { bridge as rpcBridge } from '@berty-tech/grpc-bridge/rpc'
-import { Service } from '@berty-tech/grpc-bridge'
-import GoBridge from '@berty-tech/go-bridge'
-import messengerMethodsHooks from '@berty-tech/store/methods'
-import { useAccount, useMsgrContext } from '@berty-tech/store/hooks'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
-import { Player } from '@react-native-community/audio-toolkit'
-import { MessengerActions, PersistentOptionsKeys } from '@berty-tech/store/context'
-
-import Long from 'long'
+import { showNeedRestartNotification } from '../helpers'
+import { DropDownPicker, Item } from '../shared-components/DropDownPicker'
+import { useSelector } from 'react-redux'
+import {
+	selectDaemonAddress,
+	selectEmbedded,
+	setDaemonAddress,
+	setDebugMode,
+	setStreamError,
+} from '@berty/redux/reducers/ui.reducer'
+import { withInAppNotification } from 'react-native-in-app-notification'
+import {
+	defaultPersistentOptions,
+	PersistentOptionsKeys,
+	selectPersistentOptions,
+	setPersistentOption,
+} from '@berty/redux/reducers/persistentOptions.reducer'
 
 //
 // DevTools
@@ -51,7 +77,8 @@ const HeaderDevTools: React.FC<{}> = () => {
 	const { navigate } = useNavigation()
 	const { t } = useTranslation()
 	const _styles = useStylesDevTools()
-	const [{ color, text }] = useStyles()
+	const [{ text }] = useStyles()
+	const colors = useThemeColor()
 
 	return (
 		<View>
@@ -60,29 +87,29 @@ const HeaderDevTools: React.FC<{}> = () => {
 					{
 						name: t('settings.devtools.header-left-button'),
 						icon: 'smartphone-outline',
-						color: color.dark.grey,
+						color: colors['alt-secondary-background-header'],
 						style: _styles.buttonRow,
 						disabled: true,
 					},
 					{
 						name: t('settings.devtools.header-middle-button'),
 						icon: 'book-outline',
-						color: color.dark.grey,
+						color: colors['alt-secondary-background-header'],
 						style: _styles.buttonRow,
 						onPress: () => {
-							navigate.settings.fakeData()
+							navigate('Settings.FakeData')
 						},
 					},
 					{
 						name: t('settings.devtools.header-right-button'),
 						icon: 'repeat-outline',
-						color: color.blue,
+						color: colors['background-header'],
 						style: _styles.lastButtonRow,
 						disabled: true,
 					},
 				]}
 				style={[_styles.buttonRowMarginTop]}
-				styleText={[text.bold.medium]}
+				styleText={[text.bold]}
 			/>
 		</View>
 	)
@@ -91,8 +118,9 @@ const HeaderDevTools: React.FC<{}> = () => {
 const NativeCallButton: React.FC = () => {
 	// create middleware(s) if needed
 	const messengerMiddlewares = middleware.chain(
-		__DEV__ ? middleware.logger.create('MESSENGER') : null, // eslint-disable-line
+		__DEV__ ? middleware.logger.create('MESSENGER') : null,
 	)
+	const colors = useThemeColor()
 
 	const messengerClient = Service(beapi.messenger.MessengerService, rpcBridge, messengerMiddlewares)
 	const { t } = useTranslation()
@@ -102,7 +130,7 @@ const NativeCallButton: React.FC = () => {
 			name={t('settings.devtools.native-bridge-button')}
 			icon='activity-outline'
 			iconSize={30}
-			iconColor='grey'
+			iconColor={colors['secondary-text']}
 			onPress={() => {
 				const n = i
 				++i
@@ -112,8 +140,8 @@ const NativeCallButton: React.FC = () => {
 						echo: `hello number #${n}`,
 						delay: Long.fromNumber(1000),
 					})
-					.then((stream) => {
-						stream.onMessage((res) => {
+					.then(stream => {
+						stream.onMessage(res => {
 							if (res) {
 								Vibration.vibrate(500)
 							}
@@ -122,7 +150,7 @@ const NativeCallButton: React.FC = () => {
 						setTimeout(stream.stop, 10000)
 						return stream.start()
 					})
-					.catch((err) => {
+					.catch(err => {
 						if (err?.EOF) {
 							console.info(`end of the EchoTest stream #${n}`)
 						} else if (err) {
@@ -137,23 +165,23 @@ const NativeCallButton: React.FC = () => {
 
 const DiscordShareButton: React.FC = () => {
 	const { navigate, goBack } = useNavigation()
-	const account: any = useAccount()
+	const account = useAccount()
 	const { call, done, error } = messengerMethodsHooks.useDevShareInstanceBertyID()
-	const [{ color }] = useStyles()
 	const { t } = useTranslation()
+	const colors = useThemeColor()
 
 	React.useEffect(() => {
 		if (done) {
 			Vibration.vibrate(500)
 			if (error) {
-				navigate.settings.devText({
+				navigate('Settings.DevText', {
 					text: error.toString(),
 				})
 			} else {
 				goBack()
 			}
 		}
-	}, [done, error, goBack, navigate.settings])
+	}, [done, error, goBack, navigate])
 
 	const createDiscordShareAlert = () =>
 		Alert.alert(
@@ -182,7 +210,7 @@ const DiscordShareButton: React.FC = () => {
 			name={t('settings.devtools.share-button.title')}
 			icon='activity-outline'
 			iconSize={30}
-			iconColor={color.dark.grey}
+			iconColor={colors['alt-secondary-background-header']}
 			onPress={() => {
 				createDiscordShareAlert()
 			}}
@@ -192,14 +220,14 @@ const DiscordShareButton: React.FC = () => {
 
 const DumpButton: React.FC<{ text: string; name: string }> = ({ text, name }) => {
 	const { navigate } = useNavigation()
-	const [{ color }] = useStyles()
+	const colors = useThemeColor()
 	return (
 		<ButtonSetting
 			name={name}
 			icon='activity-outline'
 			iconSize={30}
-			iconColor={color.dark.grey}
-			onPress={() => navigate.settings.devText({ text })}
+			iconColor={colors['alt-secondary-background-header']}
+			onPress={() => navigate('Settings.DevText', { text })}
 		/>
 	)
 }
@@ -212,34 +240,35 @@ const DumpAccount: React.FC = () => {
 }
 
 const DumpContacts: React.FC = () => {
-	const ctx = useMsgrContext()
-	const text = JSON.stringify(ctx.contacts, null, 2)
+	const contacts = useContactsDict()
+	const text = JSON.stringify(contacts, null, 2)
 	const { t } = useTranslation()
 	return <DumpButton name={t('settings.devtools.dump-contacts-button')} text={text} />
 }
 
 const DumpConversations: React.FC = () => {
-	const ctx = useMsgrContext()
-	const text = JSON.stringify(ctx.conversations, null, 2)
+	const conversations = useConversationsDict()
+	const text = JSON.stringify(conversations, null, 2)
 	const { t } = useTranslation()
 	return <DumpButton name={t('settings.devtools.dump-conversations-button')} text={text} />
 }
 
 const DumpInteractions: React.FC = () => {
-	const ctx = useMsgrContext()
-	const text = JSON.stringify(ctx.interactions, null, 2)
+	const interactions = useAllInteractions()
+	const text = JSON.stringify(interactions, null, 2)
 	const { t } = useTranslation()
 	return <DumpButton name={t('settings.devtools.dump-interactions-button')} text={text} />
 }
 
-const SendToAll: React.FC = () => {
-	const [{ color }] = useStyles()
+const SendToAllContacts: React.FC = () => {
 	const [disabled, setDisabled] = useState(false)
 	const { t } = useTranslation()
 	const [name, setName] = useState<any>(t('settings.devtools.send-to-all-button.title'))
-	const ctx = useMsgrContext()
-	const convs: any[] = Object.values(ctx.conversations).filter(
-		(conv: any) => conv.type === beapi.messenger.Conversation.Type.ContactType && !conv.fake,
+	const client = useMessengerClient()
+	const colors = useThemeColor()
+	const conversations = useAllConversations()
+	const filteredConvs = conversations.filter(
+		conv => conv.type === beapi.messenger.Conversation.Type.ContactType && !(conv as any)?.fake,
 	)
 	const body = `${t('settings.devtools.send-to-all-button.test')}${new Date(
 		Date.now(),
@@ -248,9 +277,9 @@ const SendToAll: React.FC = () => {
 	const handleSendToAll = React.useCallback(async () => {
 		setDisabled(true)
 		setName(t('settings.devtools.send-to-all-button.sending'))
-		for (const conv of convs) {
+		for (const conv of filteredConvs) {
 			try {
-				await ctx.client?.interact({
+				await client?.interact({
 					conversationPublicKey: conv.publicKey,
 					type: beapi.messenger.AppMessage.Type.TypeUserMessage,
 					payload: buf,
@@ -260,15 +289,15 @@ const SendToAll: React.FC = () => {
 			}
 		}
 		setDisabled(false)
-		setName(`${t('settings.devtools.send-to-all-button.tried', { length: convs.length })}`)
+		setName(`${t('settings.devtools.send-to-all-button.tried', { length: filteredConvs.length })}`)
 		setTimeout(() => setName(t('settings.devtools.send-to-all-button.title')), 1000)
-	}, [buf, convs, ctx.client, t])
+	}, [buf, filteredConvs, client, t])
 	return (
 		<ButtonSetting
 			name={name}
 			icon='paper-plane-outline'
 			iconSize={30}
-			iconColor={color.dark.grey}
+			iconColor={colors['alt-secondary-background-header']}
 			disabled={disabled}
 			onPress={() => {
 				handleSendToAll()
@@ -279,22 +308,23 @@ const SendToAll: React.FC = () => {
 }
 
 const DumpMembers: React.FC = () => {
-	const ctx = useMsgrContext()
-	const text = JSON.stringify(ctx.members, null, 2)
+	const members = useAppSelector(state => state.messenger.membersBuckets)
+	const text = JSON.stringify(members, null, 2)
 	const { t } = useTranslation()
 	return <DumpButton name={t('settings.devtools.dump-members-button')} text={text} />
 }
 
 const PlaySound: React.FC = () => {
-	const [{ color }] = useStyles()
-	const { playSound } = useMsgrContext()
+	const playSound = usePlaySound()
+	const colors = useThemeColor()
+
 	return (
 		<>
 			<ButtonSetting
 				name={'Play sound'}
 				icon='speaker-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				onPress={() => {
 					new Player('Notif_Berty02.mp3', { mixWithOthers: true }).play()
 				}}
@@ -303,115 +333,77 @@ const PlaySound: React.FC = () => {
 				name={'Play preloaded sound'}
 				icon='speaker-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				onPress={() => playSound('contactRequestSent')}
 			/>
 		</>
 	)
 }
 
-const LogButton: React.FC<{
-	name: string
-	type: PersistentOptionsKeys.Log | PersistentOptionsKeys.LogFilters
-	bulletPointValue: string
-}> = ({ name, type, bulletPointValue }) => {
-	const [{ flex, row, color, text, margin, padding, border }] = useStyles()
-	const ctx = useMsgrContext()
-	const [value, setValue] = useState<string>(ctx.persistentOptions[type].format)
-
-	return (
-		<ButtonSetting
-			name={name}
-			icon='message-circle-outline'
-			iconColor={color.dark.grey}
-			actionIcon={null}
-		>
-			<View style={[padding.right.small, padding.top.small]}>
-				<View
-					style={[
-						flex.tiny,
-						border.radius.medium,
-						border.color.black,
-						border.medium,
-						padding.small,
-						row.fill,
-						margin.bottom.small,
-						{
-							alignItems: 'center',
-						},
-					]}
-				>
-					<TextInput
-						autoCorrect={false}
-						autoCapitalize='none'
-						onChangeText={(t) => setValue(t)}
-						value={value}
-						style={[text.bold.small, text.size.medium, flex.scale(8), { fontFamily: 'Open Sans' }]}
-					/>
-					<TouchableOpacity
-						onPress={async () => {
-							await ctx.setPersistentOption({
-								type,
-								payload: {
-									format: value,
-								},
-							})
-						}}
-					>
-						<Icon name='checkmark-outline' fill={color.dark.grey} width={20} height={20} />
-					</TouchableOpacity>
-				</View>
-
-				<ButtonSettingItem
-					value={bulletPointValue}
-					icon='info-outline'
-					iconColor={color.yellow}
-					iconSize={15}
-					disabled
-					styleText={[text.color.grey]}
-					styleContainer={[margin.bottom.tiny]}
-				/>
-			</View>
-		</ButtonSetting>
-	)
-}
-
-const BodyDevTools: React.FC<{}> = () => {
+const BodyDevTools: React.FC<{}> = withInAppNotification(({ showNotification }: any) => {
 	const _styles = useStylesDevTools()
-	const [{ padding, flex, margin, color, text }] = useStyles()
+	const [{ padding, flex, margin, text }] = useStyles()
 	const { navigate } = useNavigation()
-	const navigation = useNativeNavigation()
-	const ctx = useMsgrContext()
+	const navigation = useNavigation()
 	const { t } = useTranslation()
+	const tyberHosts = useRef<{ [key: string]: string[] }>({})
+	const [, setRerender] = useState(0)
+	const colors = useThemeColor()
+	const dispatch = useAppDispatch()
+	const persistentOptions = useSelector(selectPersistentOptions)
+	const embedded = useSelector(selectEmbedded)
+	const client = useMessengerClient()
+	const restart = useRestart()
+	const daemonAddress = useSelector(selectDaemonAddress)
 
-	const items =
-		t('settings.devtools.tor-button', {
-			option: '',
-		})?.length &&
-		t('settings.devtools.tor-disabled-option')?.length &&
-		t('settings.devtools.tor-optional-option')?.length &&
-		t('settings.devtools.tor-required-option')?.length
-			? [
-					{
-						label: t('settings.devtools.tor-button', {
-							option: t('settings.devtools.tor-disabled-option'),
-						}),
-						value: t('settings.devtools.tor-disabled-option'),
-					},
-					{
-						label: t('settings.devtools.tor-button', {
-							option: t('settings.devtools.tor-optional-option'),
-						}),
-						value: t('settings.devtools.tor-optional-option'),
-					},
-					{
-						label: t('settings.devtools.tor-button', {
-							option: t('settings.devtools.tor-required-option'),
-						}),
-						value: t('settings.devtools.tor-required-option'),
-					},
-			  ]
-			: []
+	const addTyberHost = useCallback(
+		(host: string, addresses: string[]) => {
+			if (tyberHosts.current[host]) {
+				return
+			}
+
+			tyberHosts.current[host] = addresses
+			setRerender(Date.now())
+		},
+		[tyberHosts, setRerender],
+	)
+	const items: any = Object.entries(languages).map(([key, attrs]) => ({
+		label: attrs.localName,
+		value: key,
+	}))
+
+	items.push({ label: 'Debug', value: 'cimode' })
+
+	useEffect(() => {
+		let subStream: any = null
+
+		client?.tyberHostSearch({}).then(async stream => {
+			stream.onMessage((msg, err) => {
+				if (err) {
+					return
+				}
+
+				if (!msg) {
+					return
+				}
+
+				try {
+					addTyberHost(msg?.hostname!, [...msg?.ipv4, ...msg?.ipv6])
+				} catch (e) {
+					console.warn(e)
+				}
+			})
+
+			await stream.start()
+			subStream = stream
+		})
+
+		return () => {
+			if (subStream !== null) {
+				subStream.stop()
+			}
+		}
+	}, [addTyberHost, client])
 
 	return (
 		<View style={[padding.medium, flex.tiny, margin.bottom.small]}>
@@ -419,79 +411,115 @@ const BodyDevTools: React.FC<{}> = () => {
 				name={t('settings.devtools.system-info-button')}
 				icon='info-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
-				onPress={() => navigate.settings.systemInfo()}
+				iconColor={colors['alt-secondary-background-header']}
+				onPress={() => navigate('Settings.SystemInfo')}
 			/>
 			<ButtonSetting
 				name={t('settings.devtools.simulate-button')}
 				icon='alert-triangle-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
-				onPress={() =>
-					ctx.dispatch({
-						type: MessengerActions.SetStreamError,
-						payload: { error: t('settings.devtools.simulate-button') },
-					})
-				}
+				iconColor={colors['alt-secondary-background-header']}
+				onPress={() => dispatch(setStreamError({ error: t('settings.devtools.simulate-button') }))}
 			/>
 			<ButtonSetting
 				name={t('settings.devtools.simulate-js-error-button')}
 				icon='alert-octagon'
 				iconPack='feather'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				onPress={() => {
-					throw {}
+					throw new Error('test error')
 				}}
 			/>
 			<ButtonSetting
 				name={t('settings.devtools.debug-button')}
 				icon='monitor-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				toggled
-				varToggle={ctx?.persistentOptions.debug.enable}
-				actionToggle={async () => {
-					await ctx.setPersistentOption({
-						type: PersistentOptionsKeys.Debug,
-						payload: {
-							enable: !ctx.persistentOptions?.debug.enable,
-						},
-					})
+				varToggle={persistentOptions.debug.enable}
+				actionToggle={() => {
+					dispatch(
+						setPersistentOption({
+							type: PersistentOptionsKeys.Debug,
+							payload: {
+								enable: persistentOptions?.debug.enable,
+							},
+						}),
+					)
 				}}
 			/>
-			<DropDownPicker
-				items={items}
-				defaultValue={
-					items?.length
-						? ctx.persistentOptions?.tor.flag || t('settings.devtools.tor-disabled-option')
-						: null
-				}
-				containerStyle={[{ marginTop: 22, height: 60 }]}
-				onChangeItem={async (item: any) => {
-					await ctx.setPersistentOption({
-						type: PersistentOptionsKeys.Tor,
-						payload: {
-							flag: item.value,
-						},
-					})
-				}}
-			/>
-			<LogButton
+			<StringOptionInput
 				name={t('settings.devtools.log-button.name')}
 				bulletPointValue={t('settings.devtools.log-button.bullet-point')}
-				type={PersistentOptionsKeys.Log}
+				getOptionValue={() => persistentOptions.log.format}
+				setOptionValue={val => {
+					dispatch(
+						setPersistentOption({
+							type: PersistentOptionsKeys.Log,
+							payload: { format: val },
+						}),
+					)
+					showNeedRestartNotification(showNotification, restart, t)
+				}}
 			/>
-			<LogButton
+			<StringOptionInput
 				name={t('settings.devtools.log-filters-button.name')}
 				bulletPointValue={t('settings.devtools.log-filters-button.bullet-point')}
-				type={PersistentOptionsKeys.LogFilters}
+				getOptionValue={() => persistentOptions.logFilters.format}
+				setOptionValue={val => {
+					dispatch(
+						setPersistentOption({
+							type: PersistentOptionsKeys.LogFilters,
+							payload: { format: val },
+						}),
+					)
+					showNeedRestartNotification(showNotification, restart, t)
+				}}
 			/>
+			<StringOptionInput
+				name={t('settings.devtools.tyber-host-button.name')}
+				bulletPointValue={t('settings.devtools.tyber-host-button.bullet-point')}
+				getOptionValue={async () =>
+					(await storageGet(GlobalPersistentOptionsKeys.TyberHost)) ||
+					defaultPersistentOptions().tyberHost.address
+				}
+				setOptionValue={async val => {
+					await storageSet(GlobalPersistentOptionsKeys.TyberHost, val)
+					showNeedRestartNotification(showNotification, restart, t)
+				}}
+			/>
+			{Object.entries(tyberHosts.current).map(([hostname, ipAddresses]) => (
+				<ButtonSetting
+					key={hostname}
+					name={t('settings.devtools.tyber-attach', { host: hostname })}
+					icon='link-2-outline'
+					iconSize={30}
+					iconColor={colors['alt-secondary-background-header']}
+					onPress={async () => {
+						try {
+							await client?.tyberHostAttach({
+								addresses: ipAddresses,
+							})
+						} catch (e) {
+							console.warn(e)
+						}
+					}}
+				>
+					<ButtonSettingItem
+						value={ipAddresses.join('\n')}
+						iconSize={15}
+						disabled
+						styleText={{ color: colors['secondary-text'] }}
+						styleContainer={[margin.bottom.tiny]}
+					/>
+				</ButtonSetting>
+			))}
 			<ButtonSetting
 				name={t('settings.devtools.add-dev-conversations-button')}
 				icon='plus-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				onPress={() => navigation.navigate('Settings.AddDevConversations')}
 			/>
 			<DiscordShareButton />
@@ -505,37 +533,26 @@ const BodyDevTools: React.FC<{}> = () => {
 				name={t('settings.devtools.stop-node-button')}
 				icon='activity-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				onPress={() => GoBridge.closeBridge()}
 			/>
-			{!ctx.embedded && ctx.daemonAddress !== 'http://localhost:1338' && (
+			{!embedded && daemonAddress !== 'http://localhost:1338' && (
 				<ButtonSetting
 					name='Switch to 1338 node'
 					icon='folder-outline'
 					iconSize={30}
-					iconColor={color.dark.grey}
+					iconColor={colors['alt-secondary-background-header']}
 					actionIcon='arrow-ios-forward'
 					onPress={() => {
-						ctx.dispatch({
-							type: MessengerActions.SetDaemonAddress,
-							payload: { value: 'http://localhost:1338' },
-						})
+						dispatch(setDaemonAddress({ value: 'http://localhost:1338' }))
 					}}
 				/>
 			)}
 			<ButtonSetting
-				name={t('settings.devtools.bot-mode-button')}
-				icon='briefcase-outline'
-				iconSize={30}
-				iconColor={color.green}
-				toggled
-				disabled
-			/>
-			<ButtonSetting
 				name={t('settings.devtools.local-grpc-button')}
 				icon='hard-drive-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				toggled
 				disabled
 			/>
@@ -543,7 +560,7 @@ const BodyDevTools: React.FC<{}> = () => {
 				name={t('settings.devtools.console-logs-button')}
 				icon='folder-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				actionIcon='arrow-ios-forward'
 				disabled
 			/>
@@ -551,81 +568,74 @@ const BodyDevTools: React.FC<{}> = () => {
 				name={t('settings.devtools.ipfs-webui-button')}
 				icon='smartphone-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				actionIcon='arrow-ios-forward'
-				onPress={() => navigate.settings.ipfsWebUI()}
+				onPress={() => navigate('Settings.IpfsWebUI')}
 			/>
-			<ButtonSetting
-				name={t('settings.devtools.notifications-button')}
-				icon='bell-outline'
-				iconSize={30}
-				iconColor={color.dark.grey}
-				actionIcon='arrow-ios-forward'
-				disabled
-			/>
-			<SendToAll />
+			<SendToAllContacts />
 			<PlaySound />
+			<DropDownPicker
+				items={items}
+				defaultValue={i18n.language}
+				onChangeItem={(item: Item) => dispatch(setAccountLanguage(item.value))}
+			/>
 			<ButtonSetting
 				name={t('debug.inspector.show-button')}
 				icon='umbrella-outline'
 				iconSize={30}
-				iconColor={color.dark.grey}
+				iconColor={colors['alt-secondary-background-header']}
 				actionIcon='arrow-ios-forward'
-				onPress={() => ctx.setDebugMode(true)}
+				onPress={() => dispatch(setDebugMode(true))}
 			/>
 			<ButtonSettingRow
 				state={[
 					{
 						name: t('settings.devtools.footer-left-button'),
 						icon: 'smartphone-outline',
-						color: color.dark.grey,
+						color: colors['alt-secondary-background-header'],
 						style: _styles.buttonRow,
 						disabled: true,
 					},
 					{
 						name: t('settings.devtools.footer-middle-button'),
 						icon: 'list-outline',
-						color: color.dark.grey,
+						color: colors['alt-secondary-background-header'],
 						style: _styles.buttonRow,
 						disabled: true,
 					},
 					{
 						name: t('settings.devtools.footer-right-button'),
 						icon: 'repeat-outline',
-						color: color.red,
+						color: colors['warning-asset'],
 						style: _styles.lastButtonRow,
 						disabled: true,
 					},
 				]}
 				style={[_styles.buttonRowMarginTop]}
-				styleText={[text.bold.medium]}
+				styleText={[text.bold]}
 			/>
 		</View>
 	)
-}
+})
 
-export const DevTools: React.FC<ScreenProps.Settings.DevTools> = () => {
-	const { goBack } = useNavigation()
-	const [{ background, flex, color, padding }] = useStyles()
+export const DevTools: ScreenFC<'Settings.DevTools'> = () => {
+	const colors = useThemeColor()
+	const [{ padding }] = useStyles()
+
 	return (
-		<Translation>
-			{(t: any): React.ReactNode => (
-				<Layout style={[background.white, flex.tiny]}>
-					<StatusBar backgroundColor={color.dark.grey} barStyle='light-content' />
-					<SwipeNavRecognizer>
-						<ScrollView bounces={false} contentContainerStyle={padding.bottom.huge}>
-							<HeaderSettings
-								title={t('settings.devtools.title')}
-								bgColor={color.dark.grey}
-								undo={goBack}
-							>
-								<HeaderDevTools />
-							</HeaderSettings>
-							<BodyDevTools />
-						</ScrollView>
-					</SwipeNavRecognizer>
-				</Layout>
-			)}
-		</Translation>
+		<Layout style={{ backgroundColor: colors['main-background'], flex: 1 }}>
+			<StatusBar
+				backgroundColor={colors['alt-secondary-background-header']}
+				barStyle='light-content'
+			/>
+			<ScrollView bounces={false}>
+				<View
+					style={[padding.medium, { backgroundColor: colors['alt-secondary-background-header'] }]}
+				>
+					<HeaderDevTools />
+				</View>
+				<BodyDevTools />
+			</ScrollView>
+		</Layout>
 	)
 }

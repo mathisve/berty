@@ -1,111 +1,141 @@
 import React from 'react'
-import { ActivityIndicator, Button, Text, TextInput, View } from 'react-native'
-import * as Progress from 'react-native-progress'
-
-import { useMsgrContext } from '@berty-tech/store/hooks'
 import {
-	isClosing,
-	isDeletingState,
-	isReadyingBasics,
-	MessengerActions,
-	MessengerAppState,
-} from '@berty-tech/store/context'
+	ActivityIndicator,
+	Button,
+	TextInput,
+	View,
+	Image,
+	StatusBar,
+	Platform,
+} from 'react-native'
+import * as Progress from 'react-native-progress'
+import { useSelector } from 'react-redux'
 
-import LoaderDots from './shared-components/LoaderDots'
-import { useStyles } from '@berty-tech/styles'
+import { useAppDispatch } from '@berty/hooks'
+import { useThemeColor } from '@berty/store'
+import { useStyles } from '@berty/styles'
+import source from '@berty/assets/images/loader_dots.gif'
+import {
+	selectDaemonAddress,
+	selectEmbedded,
+	selectMessengerisClosing,
+	selectMessengerIsReadyingBasics,
+	selectStreamError,
+	selectStreamInProgress,
+	setDaemonAddress,
+} from '@berty/redux/reducers/ui.reducer'
+import { UnifiedText } from './shared-components/UnifiedText'
+import { useDeleteAccount, useRestart } from '@berty/hooks'
 
-const expandSelfAndCenterContent: any = {
-	alignItems: 'center',
-	justifyContent: 'center',
-	paddingBottom: 30,
-	height: '100%',
-	width: '100%',
-}
-
-const gutter = 50
-
-const StreamInProgressCmp: React.FC<{}> = () => {
-	const [{ text }] = useStyles()
-	const { streamInProgress: stream } = useMsgrContext()
-	// const [stream, setStream] = React.useState<any>(streamInProgress)
-	// React.useEffect(() => {
-	// 	console.log('SIP', streamInProgress, stream)
-	// })
-
-	// React.useEffect(() => {
-	// 	const timer = setTimeout(() => {
-	// 		setStream(streamInProgress)
-	// 	}, 2000)
-	// 	return () => clearTimeout(timer)
-	// }, [streamInProgress])
+export const LoaderDots: React.FC = () => {
+	const colors = useThemeColor()
 
 	return (
-		<View>
-			<Text
+		<View
+			style={{
+				alignItems: 'center',
+				justifyContent: 'center',
+				height: '100%',
+				width: '100%',
+				backgroundColor: colors['main-background'],
+			}}
+		>
+			<StatusBar backgroundColor={colors['main-background']} barStyle='dark-content' />
+			<Image
+				source={source}
+				style={{ width: '80%', height: '40%', maxWidth: 170, maxHeight: 80 }}
+			/>
+		</View>
+	)
+}
+
+const StreamInProgressCmp: React.FC<{}> = () => {
+	const [{ text }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+	const stream = useSelector(selectStreamInProgress)
+
+	return (
+		<View style={{ backgroundColor: colors['main-background'], flex: 1 }}>
+			<StatusBar backgroundColor={colors['main-background']} barStyle='dark-content' />
+
+			<UnifiedText
 				style={[
-					text.color.black,
-					text.bold.small,
 					text.align.center,
-					{ marginTop: 60, fontFamily: 'Open Sans' },
+					{
+						position: 'absolute',
+						top: 60 * scaleSize,
+						left: 0,
+						right: 0,
+					},
 				]}
 			>
-				{stream?.stream}
-			</Text>
-			<View style={[expandSelfAndCenterContent]}>
-				<Text
-					style={[
-						text.color.black,
-						text.bold.small,
-						text.align.center,
-						{ fontFamily: 'Open Sans' },
-					]}
-				>
-					{stream?.msg?.progress?.doing}
-				</Text>
-				<Text
-					style={[
-						text.color.black,
-						text.bold.small,
-						text.align.center,
-						{ fontFamily: 'Open Sans' },
-					]}
-				>
-					{stream?.msg?.progress?.completed} / {stream?.msg?.progress?.total}
-				</Text>
-				<Progress.Bar progress={stream?.msg?.progress?.progress} width={200} />
+				{stream?.stream || 'Test'}
+			</UnifiedText>
+			<View
+				style={{
+					flex: 1,
+					alignItems: 'center',
+					justifyContent: 'center',
+				}}
+			>
+				<UnifiedText style={[text.align.center]}>{stream?.msg.doing || 'Doing'}</UnifiedText>
+				<UnifiedText style={[text.align.center]}>
+					{stream?.msg.completed || '0'} / {stream?.msg.total || '6'}
+				</UnifiedText>
+				{Platform.OS === 'web' ? (
+					<ActivityIndicator size='large' />
+				) : (
+					<Progress.Bar progress={stream?.msg.progress || 0} width={200} color='#3946E1' />
+				)}
 			</View>
 		</View>
 	)
 }
 
+const gutter = 50
+
 export const StreamGate: React.FC = ({ children }) => {
-	const {
-		streamError,
-		daemonAddress,
-		embedded,
-		dispatch,
-		streamInProgress,
-		deleteAccount,
-		restart,
-	} = useMsgrContext()
+	const streamInProgress = useSelector(selectStreamInProgress)
+	const embedded = useSelector(selectEmbedded)
+	const streamError = useSelector(selectStreamError)
+	const deleteAccount = useDeleteAccount()
+	const daemonAddress = useSelector(selectDaemonAddress)
+	const dispatch = useAppDispatch()
+	const restart = useRestart()
+
 	const [newAddress, setNewAddress] = React.useState(daemonAddress)
+	const colors = useThemeColor()
 	const changeAddress = React.useCallback(() => {
-		dispatch({ type: MessengerActions.SetDaemonAddress, payload: { value: newAddress } })
+		dispatch(setDaemonAddress({ value: newAddress }))
 	}, [dispatch, newAddress])
 
 	if (streamError && !streamInProgress) {
 		return (
-			<View style={[expandSelfAndCenterContent, { padding: gutter }]}>
-				<Text style={{ color: 'red' }}>{streamError.toString()}</Text>
-				<Text style={{ marginTop: gutter }}>
+			<View
+				style={[
+					{
+						padding: gutter,
+						alignItems: 'center',
+						justifyContent: 'center',
+						paddingBottom: 30,
+						height: '100%',
+						width: '100%',
+					},
+				]}
+			>
+				<StatusBar backgroundColor={colors['main-background']} barStyle='dark-content' />
+				<UnifiedText style={{ color: colors['warning-asset'] }}>
+					{streamError.toString()}
+				</UnifiedText>
+				<UnifiedText style={{ marginTop: gutter }}>
 					Likely couldn't connect to the node, or the connection dropped
-				</Text>
+				</UnifiedText>
 				{embedded || (
 					<>
 						<TextInput
 							onChangeText={setNewAddress}
 							value={newAddress}
-							style={{ backgroundColor: 'grey' }}
+							style={{ backgroundColor: colors['secondary-text'] }}
 						/>
 						<Button title='Change node address' onPress={changeAddress} />
 					</>
@@ -121,45 +151,26 @@ export const StreamGate: React.FC = ({ children }) => {
 	} else if (streamInProgress?.msg) {
 		return <StreamInProgressCmp />
 	}
-	return <>{children}</>
-}
-
-export const ListGate: React.FC = ({ children }) => {
-	const ctx = useMsgrContext()
-
-	if (ctx && !isClosing(ctx.appState) && !isReadyingBasics(ctx.appState)) {
-		return <>{children}</>
-	}
-
-	return <LoaderDots />
-}
-
-const DeleteProgressScreen = () => {
-	const ctx = useMsgrContext()
-	let text = 'Unknown state'
-	switch (ctx.appState) {
-		case MessengerAppState.DeletingClosingDaemon:
-			text = 'Stopping node..'
-			break
-		case MessengerAppState.DeletingClearingStorage:
-			text = 'Clearing storage..'
-			break
-	}
-
 	return (
-		<View style={[expandSelfAndCenterContent, { padding: gutter }]}>
-			<Text>{text}</Text>
-			<ActivityIndicator style={{ marginTop: gutter }} size='large' />
-		</View>
+		<>
+			<StatusBar backgroundColor={colors['main-background']} barStyle='dark-content' />
+			{children}
+		</>
 	)
 }
 
-export const DeleteGate: React.FC = ({ children }) => {
-	const ctx = useMsgrContext()
+export const ListGate: React.FC = ({ children }) => {
+	const colors = useThemeColor()
+	const isClosing = useSelector(selectMessengerisClosing)
+	const isReadyingBasics = useSelector(selectMessengerIsReadyingBasics)
 
-	if (ctx && isDeletingState(ctx.appState)) {
-		return <DeleteProgressScreen />
-	} else {
-		return <>{children}</>
+	if (!isClosing && !isReadyingBasics) {
+		return (
+			<>
+				<StatusBar backgroundColor={colors['main-background']} barStyle='dark-content' />
+				{children}
+			</>
+		)
 	}
+	return <LoaderDots />
 }

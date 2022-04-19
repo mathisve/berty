@@ -1,56 +1,88 @@
 import React from 'react'
-import { View, StatusBar } from 'react-native'
-import { Text } from '@ui-kitten/components'
-import { Translation } from 'react-i18next'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { View, StatusBar, Platform } from 'react-native'
+import { useTranslation } from 'react-i18next'
 
-import { useNotificationsInhibitor } from '@berty-tech/store/hooks'
-import { useStyles } from '@berty-tech/styles'
-import { useNavigation } from '@berty-tech/navigation'
+import {
+	storageSet,
+	GlobalPersistentOptionsKeys,
+	useNotificationsInhibitor,
+	useThemeColor,
+} from '@berty/store'
+import { useStyles } from '@berty/styles'
+import { ScreenFC } from '@berty/navigation'
 
-import Logo from './berty_gradient_square.svg'
+import Logo from '@berty/assets/logo/berty_gradient_square.svg'
 import Button from './Button'
+import { importAccountFromDocumentPicker } from '../pickerUtils'
+import { UnifiedText } from '../shared-components/UnifiedText'
+import { useAppSelector } from '@berty/hooks'
+import { selectEmbedded } from '@berty/redux/reducers/ui.reducer'
 
-export const GetStarted = () => {
+export const GetStarted: ScreenFC<'Onboarding.GetStarted'> = ({ navigation: { navigate } }) => {
 	useNotificationsInhibitor(() => true)
-	const [{ absolute, background, column, flex, padding, text, color }] = useStyles()
-	const { navigate } = useNavigation()
+	const [{ margin, padding, text }] = useStyles()
+	const colors = useThemeColor()
+	const { t } = useTranslation<'translation', string>()
+	const embedded = useAppSelector(selectEmbedded)
 
 	return (
-		<Translation>
-			{(t) => (
-				<SafeAreaView style={[absolute.fill, background.white, column.justify, padding.medium]}>
-					<StatusBar backgroundColor={color.white} barStyle='dark-content' />
-					<View style={[flex.medium]} />
-					<View style={[flex.big, { flexDirection: 'row', justifyContent: 'center' }]}>
-						<Logo height='60%' width='65%' />
-					</View>
-					<View style={[flex.medium]}>
-						<Text
-							style={[
-								padding.horizontal.medium,
-								text.align.center,
-								text.align.bottom,
-								{
-									lineHeight: 24,
-									letterSpacing: 0.4,
-								},
-							]}
-						>
-							{t('onboarding.getstarted.desc') as any}
-						</Text>
-					</View>
-					<View style={[flex.medium]}>
+		<View
+			style={[
+				padding.medium,
+				{ backgroundColor: colors['main-background'], flex: 1, justifyContent: 'center' },
+			]}
+		>
+			<StatusBar backgroundColor={colors['main-background']} barStyle='dark-content' />
+			<View style={[margin.bottom.big, { flexDirection: 'row', justifyContent: 'center' }]}>
+				<Logo />
+			</View>
+			<View>
+				<View>
+					<UnifiedText
+						style={[
+							padding.horizontal.medium,
+							text.align.center,
+							text.size.large,
+							text.bold,
+							{ color: colors['background-header'], textTransform: 'uppercase' },
+						]}
+					>
+						{t('onboarding.getstarted.title')}
+					</UnifiedText>
+				</View>
+				<View style={[margin.top.small]}>
+					<UnifiedText
+						style={[padding.horizontal.medium, text.align.center, text.align.bottom, text.italic]}
+					>
+						{t('onboarding.getstarted.desc')}
+					</UnifiedText>
+				</View>
+				<View style={[margin.top.big]}>
+					<Button
+						onPress={async () => {
+							await storageSet(GlobalPersistentOptionsKeys.IsNewAccount, 'isNew')
+							navigate('Onboarding.CreateAccount')
+						}}
+					>
+						{t('onboarding.getstarted.create-button')}
+					</Button>
+					{Platform.OS !== 'web' && (
 						<Button
-							style={{ ...column.item.center, backgroundColor: '#3744DE' }}
-							textStyle={{ textTransform: 'uppercase', color: 'white' }}
-							onPress={() => navigate.onboarding.choosePreset()}
+							status='secondary'
+							onPress={async () => {
+								await importAccountFromDocumentPicker(embedded)
+							}}
 						>
-							{t('onboarding.getstarted.button')}
+							{t('onboarding.getstarted.import-button')}
 						</Button>
-					</View>
-				</SafeAreaView>
-			)}
-		</Translation>
+					)}
+					{/*
+					<Button status='secondary' onPress={() => {}}>
+						{t('onboarding.getstarted.link-button')}
+					</Button>
+					*/}
+				</View>
+			</View>
+		</View>
 	)
 }

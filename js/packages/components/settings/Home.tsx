@@ -1,334 +1,348 @@
-import React from 'react'
-import { View, ScrollView, ActivityIndicator, TouchableOpacity, StatusBar } from 'react-native'
-import { Text, Icon } from '@ui-kitten/components'
-import { useNavigation as useNativeNavigation } from '@react-navigation/native'
-import QRCode from 'react-native-qrcode-svg'
-import { Translation, useTranslation } from 'react-i18next'
+import React, { useEffect } from 'react'
+import { ScrollView, TouchableOpacity, View, Platform } from 'react-native'
+import { Icon } from '@ui-kitten/components'
+import { useTranslation } from 'react-i18next'
+import { useDispatch } from 'react-redux'
+import * as MailComposer from 'expo-mail-composer'
 
-import { useStyles } from '@berty-tech/styles'
-import { ScreenProps, useNavigation } from '@berty-tech/navigation'
-import { useAccount, useMsgrContext } from '@berty-tech/store/hooks'
-
+import beapi from '@berty/api'
+import { useStyles } from '@berty/styles'
+import { ScreenFC, useNavigation } from '@berty/navigation'
+import { accountService, useMountEffect, useThemeColor, useMessengerClient } from '@berty/store'
+import { useAccount, useAppSelector, useSetNetworkConfig } from '@berty/hooks'
+import { selectSelectedAccount } from '@berty/redux/reducers/ui.reducer'
 import {
-	ButtonSetting,
-	ButtonSettingItem,
-	ButtonSettingRow,
-} from '../shared-components/SettingsButtons'
-import HeaderSettings from '../shared-components/Header'
-import { SwipeNavRecognizer } from '../shared-components/SwipeNavRecognizer'
-import logo from '../main/1_berty_picto.png'
+	checkBlePermission,
+	getPermissionStatus,
+	PermissionType,
+} from '@berty/rnutil/checkPermissions'
+import { withInAppNotification } from 'react-native-in-app-notification'
+import store from '@berty/redux/store'
+import {
+	selectBlePerm,
+	selectCurrentNetworkConfig,
+	selectParsedLocalNetworkConfig,
+	setBlePerm,
+	setCurrentNetworkConfig,
+} from '@berty/redux/reducers/networkConfig.reducer'
+
+import { useModal } from '../providers/modal.provider'
+import { EditProfile } from '../modals'
+import { UnifiedText } from '../shared-components/UnifiedText'
 import { AccountAvatar } from '../avatars'
-import { PersistentOptionsKeys } from '@berty-tech/store/context'
-import i18n from '@berty-tech/berty-i18n'
-import { DropDownPicker } from '@berty-tech/components/shared-components/DropDownPicker'
-import { languages } from '@berty-tech/berty-i18n/locale/languages'
+import { ButtonSettingV2, Section } from '../shared-components'
 
-const useStylesHome = () => {
-	const [{ height, margin, padding, text }] = useStyles()
-	return {
-		firstHeaderButton: [margin.right.scale(20), height(90)],
-		secondHeaderButton: [margin.right.scale(20), height(90)],
-		thirdHeaderButton: height(90),
-		headerNameText: text.size.scale(13),
-		scrollViewPadding: padding.bottom.scale(50),
-	}
-}
-
-const HomeHeaderGroupButton: React.FC = () => {
-	const _styles = useStylesHome()
-	const [{ padding, color }] = useStyles()
+const ProfileButton: React.FC<{}> = () => {
+	const [{ padding, margin, border, text }, { scaleSize }] = useStyles()
+	const colors = useThemeColor()
+	const account = useAccount()
 	const { navigate } = useNavigation()
+	const { show } = useModal()
 
 	return (
-		<Translation>
-			{(t: any): React.ReactNode => (
-				<View
-					style={[
-						padding.horizontal.medium,
-						padding.top.small,
-						{ position: 'absolute', width: '100%', bottom: -40 },
-					]}
-				>
-					<ButtonSettingRow
-						state={[
-							{
-								name: t('settings.help.updates-button'),
-								icon: 'arrow-upward-outline',
-								color: color.red,
-								style: _styles.firstHeaderButton,
-								onPress: () => navigate.settings.appUpdates(),
-							},
-							{
-								name: t('settings.home.header-left-button'),
-								icon: 'question-mark-circle-outline',
-								color: color.red,
-								style: _styles.firstHeaderButton,
-								onPress: () => navigate.settings.help(),
-							},
-							{
-								name: t('settings.home.header-right-button'),
-								icon: 'settings-2-outline',
-								color: color.blue,
-								style: _styles.thirdHeaderButton,
-								onPress: () => navigate.settings.mode(),
-							},
-						]}
-					/>
+		<TouchableOpacity
+			onPress={() => show(<EditProfile />)}
+			style={[
+				margin.horizontal.medium,
+				padding.medium,
+				border.radius.medium,
+				{
+					flex: 1,
+					backgroundColor: colors['main-background'],
+				},
+			]}
+		>
+			<View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+				<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+					<AccountAvatar size={50 * scaleSize} />
+					<UnifiedText style={[padding.left.medium, text.bold]}>
+						{account.displayName || ''}
+					</UnifiedText>
 				</View>
-			)}
-		</Translation>
-	)
-}
-
-const HomeHeaderAvatar: React.FC = () => {
-	const _styles = useStylesHome()
-	const [
-		{ row, margin, background, border, padding },
-		{ windowWidth, windowHeight, scaleHeight, scaleSize },
-	] = useStyles()
-	const account = useAccount()
-	const navigation = useNavigation()
-	const qrCodeSize = Math.min(windowHeight, windowWidth) * 0.3
-
-	return (
-		<View style={[row.center, margin.top.scale(30), padding.bottom.scale(70)]}>
-			<TouchableOpacity
-				style={[background.white, border.radius.medium, padding.scale(20), padding.top.scale(40)]}
-				onPress={() => navigation.navigate.settings.myBertyId()}
-			>
-				<View style={[{ alignItems: 'center' }]}>
-					<View
-						style={{
-							position: 'absolute',
-							top: -73,
-						}}
-					>
-						<AccountAvatar size={60 * scaleSize} />
-					</View>
-					<Text style={[_styles.headerNameText]}>{account?.displayName || ''}</Text>
-					<View style={[padding.top.scale(18 * scaleHeight)]}>
-						{(account?.link && (
-							<QRCode
-								size={qrCodeSize}
-								value={account.link}
-								logo={logo}
-								color='#3845E0'
-								mode='circle'
-							/>
-						)) ||
-							null}
-					</View>
-				</View>
-			</TouchableOpacity>
-		</View>
-	)
-}
-
-const HomeHeader: React.FC = () => {
-	const navigation = useNativeNavigation()
-	const [{ color, margin, flex, text }, { scaleSize }] = useStyles()
-	const { t }: { t: any } = useTranslation()
-
-	return (
-		<View style={[flex.tiny]}>
-			<View style={[{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }]}>
-				<TouchableOpacity style={[flex.tiny]} onPress={() => navigation.goBack()}>
-					<Icon
-						name='arrow-back-outline'
-						width={25 * scaleSize}
-						height={25 * scaleSize}
-						fill={color.white}
-					/>
-				</TouchableOpacity>
-				<View style={[flex.big]} />
 				<TouchableOpacity
-					onPress={() => navigation.navigate('Settings.EditProfile')}
-					style={{
-						flexDirection: 'row',
-						alignContent: 'center',
-						alignItems: 'center',
-						justifyContent: 'flex-end',
-						paddingVertical: 5 * scaleSize,
-					}}
+					style={[
+						padding.scale(8),
+						border.radius.scale(100),
+						{
+							backgroundColor: '#EDEDED',
+							alignItems: 'center',
+							justifyContent: 'center',
+							flexDirection: 'row',
+						},
+					]}
+					onPress={() => navigate('Settings.MyBertyId')}
 				>
-					<Text style={[{ color: color.white }, margin.right.small, text.size.medium]}>
-						{t('settings.home.edit-profile')}
-					</Text>
 					<Icon
-						name='edit-outline'
-						width={25 * scaleSize}
-						height={25 * scaleSize}
-						fill={color.white}
+						name='qr'
+						pack='custom'
+						fill={colors['background-header']}
+						width={20 * scaleSize}
+						height={20 * scaleSize}
 					/>
 				</TouchableOpacity>
 			</View>
-			<HomeHeaderAvatar />
-		</View>
+		</TouchableOpacity>
 	)
 }
 
-const HomeBodySettings: React.FC<{}> = () => {
-	const [{ flex, color, padding, text, margin, column }] = useStyles()
-	const navigation = useNativeNavigation()
-	const ctx = useMsgrContext()
-	const isPrefMode = ctx.persistentOptions.preset.value === 'performance'
-	const enableNotif = ctx.persistentOptions.notifications.enable
+export const Home: ScreenFC<'Settings.Home'> = withInAppNotification(
+	({ showNotification }: any) => {
+		const [{}, { scaleSize }] = useStyles()
+		const colors = useThemeColor()
+		const { navigate } = useNavigation()
+		const { t }: { t: any } = useTranslation()
+		const messengerClient = useMessengerClient()
+		const selectedAccount = useAppSelector(selectSelectedAccount)
+		const blePerm = useAppSelector(selectBlePerm)
+		const networkConfig = useAppSelector(selectCurrentNetworkConfig)
+		const dispatch = useDispatch()
 
-	const items: any = Object.entries(languages).map(([key, attrs]) => ({
-		label: attrs.localName,
-		value: key,
-	}))
+		const generateEmail = React.useCallback(async () => {
+			var systemInfo = await messengerClient?.systemInfo({})
+			// Delete useless / intrusive infos
+			delete systemInfo?.protocol?.process?.hostName
+			delete systemInfo?.protocol?.process?.systemUsername
+			delete systemInfo?.messenger?.process?.hostName
+			delete systemInfo?.messenger?.process?.systemUsername
+			try {
+				let result = await MailComposer.composeAsync({
+					recipients: ['bugs@berty.tech'],
+					subject: 'Bug report',
+					body: `You can describe your bug here.
+						--------------------------------
+						${JSON.stringify(
+							{
+								systemInfo: systemInfo,
+								networkConfig: networkConfig,
+							},
+							null,
+							2,
+						)}`,
+				})
+				if (result.status === MailComposer.MailComposerStatus.UNDETERMINED) {
+					showNotification({
+						title: t('notification.submit-failed.title'),
+						message: t('notification.submit-failed.desc'),
+						additionalProps: { type: 'message' },
+					})
+				}
+			} catch (err) {
+				showNotification({
+					title: t('notification.submit-failed.title'),
+					message: t('notification.submit-failed.desc'),
+					additionalProps: { type: 'message' },
+				})
+			}
+		}, [messengerClient, networkConfig, showNotification, t])
 
-	items.push({ label: 'Debug', value: 'cimode' })
-	return (
-		<Translation>
-			{(t: any): React.ReactNode => (
-				<View style={[flex.tiny, padding.horizontal.medium, padding.bottom.small]}>
-					<ButtonSetting
-						name={t('settings.mode.app-mode-button.title')}
-						icon='options-outline'
-						iconSize={30}
-						iconColor={color.blue}
-						// actionIcon='arrow-ios-forward'
-						onPress={() => navigation.navigate('Onboarding.ChoosePreset')}
-						state={{
-							value: isPrefMode
-								? t('settings.mode.app-mode-button.performance-tag')
-								: t('settings.mode.app-mode-button.privacy-tag'),
-							color: color.white,
-							bgColor: isPrefMode ? color.blue : color.red,
-							stateIcon: isPrefMode ? 'flash-outline' : 'lock-outline',
-							stateIconColor: color.white,
-						}}
-					>
-						<Text
-							style={[
-								column.item.right,
-								text.bold.small,
-								text.size.tiny,
-								margin.right.scale(60),
-								isPrefMode ? text.color.blue : text.color.red,
-								margin.bottom.small,
-							]}
-						>
-							{t('settings.mode.app-mode-button.description-tag')}
-						</Text>
-						<View style={[padding.right.small]}>
-							<ButtonSettingItem
-								value={t('settings.mode.app-mode-button.first-bullet-point')}
-								icon={isPrefMode ? 'checkmark-circle-2' : 'close-circle'}
-								iconColor={isPrefMode ? color.blue : color.red}
-								disabled
-								styleText={[text.color.grey]}
-								styleContainer={[margin.bottom.tiny]}
-							/>
-							<ButtonSettingItem
-								value={t('settings.mode.app-mode-button.second-bullet-point')}
-								color='rgba(43,46,77,0.8)'
-								icon={isPrefMode ? 'checkmark-circle-2' : 'close-circle'}
-								iconColor={isPrefMode ? color.blue : color.red}
-								disabled
-								styleText={[text.color.grey]}
-								styleContainer={[margin.bottom.tiny]}
-							/>
-							<ButtonSettingItem
-								value={t('settings.mode.app-mode-button.third-bullet-point')}
-								color='rgba(43,46,77,0.8)'
-								icon={isPrefMode ? 'checkmark-circle-2' : 'close-circle'}
-								iconColor={isPrefMode ? color.blue : color.red}
-								disabled
-								styleText={[text.color.grey]}
-								styleContainer={[margin.bottom.tiny]}
-							/>
-						</View>
-					</ButtonSetting>
-					<DropDownPicker
-						items={items}
-						defaultValue={ctx.persistentOptions?.i18n.language}
-						onChangeItem={async (item: any) => {
-							await ctx.setPersistentOption({
-								type: PersistentOptionsKeys.I18N,
-								payload: {
-									language: item.value,
-								},
-							})
-							await i18n.changeLanguage(item.value)
-						}}
-					/>
-					<ButtonSetting
-						name={t('settings.mode.notifications-button.title')}
-						icon='bell-outline'
-						iconColor={color.blue}
-						state={{
-							value: enableNotif
-								? t('settings.mode.notifications-button.tag-enabled')
-								: t('settings.mode.notifications-button.tag-disabled'),
-							color: enableNotif ? color.green : color.red,
-							bgColor: enableNotif ? color.light.green : color.light.red,
-						}}
-						onPress={() => navigation.navigate('Settings.Notifications')}
-					/>
-					<ButtonSetting
-						name={t('settings.mode.bluetooth-button.title')}
-						icon='bluetooth-outline'
-						iconColor={color.blue}
-						onPress={() => navigation.navigate('Settings.Bluetooth')}
-					/>
-					<ButtonSetting
-						name={t('settings.mode.dark-mode-button')}
-						icon='moon-outline'
-						iconColor={color.blue}
-						toggled
-						disabled
-					/>
-					<ButtonSetting
-						name={t('settings.home.header-center-button')}
-						icon='options-2-outline'
-						iconColor={color.dark.grey}
-						onPress={() => navigation.navigate('Settings.DevTools')}
-					/>
-				</View>
-			)}
-		</Translation>
-	)
-}
+		useEffect(() => {
+			return () => {
+				// we should use an useAppSelector for getting this value
+				// but the value doesn't seem to be updated in the useEffect return callback
+				const parsedLocalNetworkConfig = selectParsedLocalNetworkConfig(store.getState())
+				const currentNetworkConfig = selectCurrentNetworkConfig(store.getState())
 
-export const Home: React.FC<ScreenProps.Settings.Home> = () => {
-	const account = useAccount()
-	const [{ flex, background, row, margin }] = useStyles()
-	const navigation = useNativeNavigation()
+				if (JSON.stringify(parsedLocalNetworkConfig) !== JSON.stringify(currentNetworkConfig)) {
+					setNewConfig(parsedLocalNetworkConfig)
+				}
+			}
+			// eslint-disable-next-line react-hooks/exhaustive-deps
+		}, [])
 
-	return (
-		<>
-			<View style={[flex.tiny, background.white]}>
-				<StatusBar backgroundColor='#585AF1' barStyle='light-content' />
-				<SwipeNavRecognizer
-					// onSwipeUp={() => navigation.goBack()}
-					// onSwipeLeft={() => navigation.goBack()}
-					onSwipeRight={() => navigation.goBack()}
-					// onSwipeDown={() => navigation.goBack()}
+		// get network config of the account at the mount of the component
+		useMountEffect(() => {
+			const f = async () => {
+				const netConf = await accountService.networkConfigGet({
+					accountId: selectedAccount,
+				})
+				if (netConf.currentConfig) {
+					dispatch(setCurrentNetworkConfig(netConf.currentConfig))
+					return
+				}
+			}
+
+			f().catch(e => console.warn(e))
+		})
+
+		// get OS status permission
+		useMountEffect(() => {
+			const f = async () => {
+				if (Platform.OS === 'web') {
+					return
+				}
+				const status = await getPermissionStatus(PermissionType.proximity)
+				dispatch(setBlePerm(status))
+			}
+			f()
+		})
+
+		// setNewConfig function: update the state + update the network config in the account service + show notif to restart app
+		const setNewConfig = useSetNetworkConfig()
+
+		const getOffGridCommunicationValue = React.useCallback(() => {
+			if (
+				blePerm === 'granted' &&
+				networkConfig?.bluetoothLe === beapi.account.NetworkConfig.Flag.Enabled
+			) {
+				if (Platform.OS === 'android') {
+					return networkConfig?.androidNearby === beapi.account.NetworkConfig.Flag.Enabled
+				} else if (Platform.OS === 'ios') {
+					return (
+						networkConfig?.appleMultipeerConnectivity === beapi.account.NetworkConfig.Flag.Enabled
+					)
+				}
+			}
+			return false
+		}, [blePerm, networkConfig])
+
+		return (
+			<View style={{ backgroundColor: colors['secondary-background'], flex: 1, paddingTop: 20 }}>
+				<ScrollView
+					bounces={false}
+					contentContainerStyle={{ paddingBottom: 12 * scaleSize }}
+					showsVerticalScrollIndicator={false}
 				>
-					{account == null ? (
-						<ActivityIndicator size='large' style={[row.center]} />
-					) : (
-						<ScrollView
-							contentContainerStyle={{ paddingBottom: 30 }}
-							bounces={false}
-							nestedScrollEnabled
-						>
-							<View style={[margin.bottom.scale(20)]}>
-								<HeaderSettings>
-									<View>
-										<HomeHeader />
-										<HomeHeaderGroupButton />
-									</View>
-								</HeaderSettings>
-							</View>
-							<HomeBodySettings />
-						</ScrollView>
-					)}
-				</SwipeNavRecognizer>
+					<ProfileButton />
+					<Section>
+						{Platform.OS !== 'web' && networkConfig && (
+							<ButtonSettingV2
+								text={t('settings.home.proximity-button')}
+								icon='bluetooth-outline'
+								toggle={{
+									enable: true,
+									value: getOffGridCommunicationValue(),
+									action: async () => {
+										if (Platform.OS === 'ios') {
+											await checkBlePermission({
+												setNetworkConfig: async (newConfig: beapi.account.INetworkConfig) => {
+													dispatch(setCurrentNetworkConfig(newConfig))
+												},
+												networkConfig,
+												changedKey: ['bluetoothLe', 'appleMultipeerConnectivity'],
+												navigate,
+												accept: async () => {
+													let newValue
+													newValue =
+														networkConfig?.bluetoothLe === beapi.account.NetworkConfig.Flag.Enabled
+															? beapi.account.NetworkConfig.Flag.Disabled
+															: beapi.account.NetworkConfig.Flag.Enabled
+													if (newValue === beapi.account.NetworkConfig.Flag.Disabled) {
+														newValue =
+															networkConfig?.appleMultipeerConnectivity ===
+															beapi.account.NetworkConfig.Flag.Enabled
+																? beapi.account.NetworkConfig.Flag.Disabled
+																: beapi.account.NetworkConfig.Flag.Enabled
+													}
+													dispatch(
+														setCurrentNetworkConfig({
+															...networkConfig,
+															bluetoothLe: newValue,
+															appleMultipeerConnectivity: newValue,
+														}),
+													)
+												},
+											})
+										}
+										if (Platform.OS === 'android') {
+											await checkBlePermission({
+												setNetworkConfig: async (newConfig: beapi.account.INetworkConfig) => {
+													dispatch(setCurrentNetworkConfig(newConfig))
+												},
+												networkConfig,
+												changedKey: ['bluetoothLe', 'androidNearby'],
+												navigate,
+												accept: async () => {
+													let newValue
+													newValue =
+														networkConfig?.bluetoothLe === beapi.account.NetworkConfig.Flag.Enabled
+															? beapi.account.NetworkConfig.Flag.Disabled
+															: beapi.account.NetworkConfig.Flag.Enabled
+													if (newValue === beapi.account.NetworkConfig.Flag.Disabled) {
+														newValue =
+															networkConfig?.androidNearby ===
+															beapi.account.NetworkConfig.Flag.Enabled
+																? beapi.account.NetworkConfig.Flag.Disabled
+																: beapi.account.NetworkConfig.Flag.Enabled
+													}
+													dispatch(
+														setCurrentNetworkConfig({
+															...networkConfig,
+															bluetoothLe: newValue,
+															androidNearby: newValue,
+														}),
+													)
+												},
+											})
+										}
+									},
+								}}
+							/>
+						)}
+						{/*
+					<ButtonSettingV2
+						text={t('settings.home.notifications-button')}
+						icon='bell'
+						onPress={() => navigate('Settings.Notifications')}
+					/>
+					<ButtonSettingV2
+						text={t('settings.home.contact-convs-button')}
+						icon='message-circle'
+						onPress={() => navigate('Settings.ContactAndConversations')}
+					/>
+					*/}
+						<ButtonSettingV2
+							text={t('settings.home.appearance-button')}
+							icon='eye-outline'
+							onPress={() => navigate('Settings.Appearance')}
+						/>
+						{/*
+					<ButtonSettingV2
+						text={t('settings.home.devices-button')}
+						icon='smartphone'
+						onPress={() => navigate('Settings.DevicesAndBackup')}
+						last
+					/>
+					*/}
+					</Section>
+					<Section>
+						{/*
+					<ButtonSettingV2
+						text={t('settings.home.security-button')}
+						icon='lock'
+						onPress={() => navigate('Settings.Security')}
+					/>
+					*/}
+						<ButtonSettingV2
+							text={t('settings.home.accounts-button')}
+							icon='person-outline'
+							onPress={() => navigate('Settings.Accounts')}
+						/>
+						{networkConfig && (
+							<ButtonSettingV2
+								text={t('settings.home.network-button')}
+								icon='wifi-outline'
+								last
+								onPress={() => {
+									navigate('Settings.Network')
+								}}
+							/>
+						)}
+					</Section>
+					<Section>
+						<ButtonSettingV2
+							text={t('settings.home.bug-button')}
+							icon='email-outline'
+							onPress={() => generateEmail()}
+						/>
+						<ButtonSettingV2
+							text={t('settings.home.about-button')}
+							icon='info-outline'
+							last
+							onPress={() => navigate('Settings.AboutBerty')}
+						/>
+					</Section>
+				</ScrollView>
 			</View>
-		</>
-	)
-}
+		)
+	},
+)

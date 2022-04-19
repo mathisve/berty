@@ -5,161 +5,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ipfs/go-ipfs/keystore"
 	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"berty.tech/berty/v2/go/internal/ipfsutil"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
 )
-
-type mockedPeer struct {
-	CoreAPI ipfsutil.CoreAPIMock
-	DB      *BertyOrbitDB
-	GC      *groupContext
-	MKS     *messageKeystore
-	DevKS   DeviceKeystore
-}
-
-func (m *mockedPeer) PeerInfo() peer.AddrInfo {
-	return m.CoreAPI.MockNode().Peerstore.PeerInfo(m.CoreAPI.MockNode().Identity)
-}
-
-func connectPeers(ctx context.Context, t testing.TB, mn mocknet.Mocknet) {
-	t.Helper()
-
-	err := mn.LinkAll()
-	require.NoError(t, err)
-
-	err = mn.ConnectAllButSelf()
-	require.NoError(t, err)
-}
-
-func dropPeers(t *testing.T, mockedPeers []*mockedPeer) {
-	t.Helper()
-
-	for _, m := range mockedPeers {
-		if ms := m.GC.MetadataStore(); ms != nil {
-			if err := ms.Drop(); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		if db := m.DB; db != nil {
-			if err := db.Close(); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		if ca := m.CoreAPI; ca != nil {
-			if err := ca.MockNode().Close(); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-}
-
-func createPeersWithGroup(ctx context.Context, t testing.TB, pathBase string, memberCount int, deviceCount int) ([]*mockedPeer, crypto.PrivKey, func()) {
-	t.Helper()
-
-	var devKS DeviceKeystore
-
-	mockedPeers := make([]*mockedPeer, memberCount*deviceCount)
-
-	g, groupSK, err := NewGroupMultiMember()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	mn := mocknet.New(ctx)
-	rdvp, err := mn.GenPeer()
-	require.NoError(t, err, "failed to generate mocked peer")
-
-	_, cleanuprdvp := ipfsutil.TestingRDVP(ctx, t, rdvp)
-
-	ipfsopts := ipfsutil.TestingAPIOpts{
-		Mocknet: mn,
-		RDVPeer: rdvp.Peerstore().PeerInfo(rdvp.ID()),
-	}
-	deviceIndex := 0
-
-	cls := make([]func(), memberCount)
-	for i := 0; i < memberCount; i++ {
-		for j := 0; j < deviceCount; j++ {
-			ca, cleanupNode := ipfsutil.TestingCoreAPIUsingMockNet(ctx, t, &ipfsopts)
-
-			if j == 0 {
-				devKS = NewDeviceKeystore(keystore.NewMemKeystore())
-			} else {
-				accSK, err := devKS.AccountPrivKey()
-				require.NoError(t, err, "deviceKeystore private key")
-
-				accProofSK, err := devKS.AccountProofPrivKey()
-				require.NoError(t, err, "deviceKeystore private proof key")
-
-				devKS, err = NewWithExistingKeys(keystore.NewMemKeystore(), accSK, accProofSK)
-				require.NoError(t, err, "deviceKeystore from existing keys")
-			}
-
-			mk, cleanupMessageKeystore := newInMemMessageKeystore()
-
-			db, err := NewBertyOrbitDB(ctx, ca.API(), &NewOrbitDBOptions{
-				DeviceKeystore:  devKS,
-				MessageKeystore: mk,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			gc, err := db.openGroup(ctx, g, nil)
-			if err != nil {
-				t.Fatalf("err: creating new group context, %v", err)
-			}
-
-			mp := &mockedPeer{
-				CoreAPI: ca,
-				DB:      db,
-				GC:      gc,
-				MKS:     mk,
-				DevKS:   devKS,
-			}
-
-			// setup cleanup
-			cls[i] = func() {
-				if ms := mp.GC.MetadataStore(); ms != nil {
-					err := ms.Drop()
-					assert.NoError(t, err)
-				}
-
-				if db := mp.DB; db != nil {
-					err := db.Close()
-					assert.NoError(t, err)
-				}
-
-				cleanupNode()
-				cleanupMessageKeystore()
-			}
-
-			mockedPeers[deviceIndex] = mp
-			deviceIndex++
-		}
-	}
-
-	connectPeers(ctx, t, ipfsopts.Mocknet)
-
-	return mockedPeers, groupSK, func() {
-		for _, cleanup := range cls {
-			cleanup()
-		}
-
-		cleanuprdvp()
-
-		_ = rdvp.Close()
-	}
-}
 
 func inviteAllPeersToGroup(ctx context.Context, t *testing.T, peers []*mockedPeer, groupSK crypto.PrivKey) {
 	t.Helper()
@@ -170,46 +20,41 @@ func inviteAllPeersToGroup(ctx context.Context, t *testing.T, peers []*mockedPee
 	errChan := make(chan error, len(peers))
 
 	for i, p := range peers {
+		sub, err := p.GC.MetadataStore().EventBus().Subscribe(new(protocoltypes.GroupMetadataEvent))
+		require.NoError(t, err)
 		go func(p *mockedPeer, peerIndex int) {
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
+			defer sub.Close()
+			defer wg.Done()
+
 			eventReceived := 0
 
-			for e := range p.GC.MetadataStore().Subscribe(ctx) {
-				switch e.(type) {
-				case *protocoltypes.GroupMetadataEvent:
-					casted, _ := e.(*protocoltypes.GroupMetadataEvent)
-					if casted.Metadata.EventType != protocoltypes.EventTypeGroupMemberDeviceAdded {
-						continue
-					}
+			for e := range sub.Out() {
+				evt := e.(protocoltypes.GroupMetadataEvent)
+				if evt.Metadata.EventType != protocoltypes.EventTypeGroupMemberDeviceAdded {
+					continue
+				}
 
-					memdev := &protocoltypes.GroupAddMemberDevice{}
-					if err := memdev.Unmarshal(casted.Event); err != nil {
-						errChan <- err
-						wg.Done()
-						return
-					}
+				memdev := &protocoltypes.GroupAddMemberDevice{}
+				if err := memdev.Unmarshal(evt.Event); err != nil {
+					errChan <- err
+					return
+				}
 
-					eventReceived++
-					if eventReceived == len(peers) {
-						cancel()
-					}
+				eventReceived++
+				if eventReceived == len(peers) {
+					return
 				}
 			}
-
-			wg.Done()
 		}(p, i)
 	}
 
 	for i, p := range peers {
-		if _, err := p.GC.MetadataStore().AddDeviceToGroup(ctx); err != nil {
-			t.Fatal(err)
-		}
+		_, err := p.GC.MetadataStore().AddDeviceToGroup(ctx)
+		require.NoError(t, err)
 
 		if i == 0 {
-			if _, err := p.GC.MetadataStore().ClaimGroupOwnership(ctx, groupSK); err != nil {
-				t.Fatal(err)
-			}
+			_, err := p.GC.MetadataStore().ClaimGroupOwnership(ctx, groupSK)
+			require.NoError(t, err)
 		}
 	}
 
@@ -222,7 +67,7 @@ func inviteAllPeersToGroup(ctx context.Context, t *testing.T, peers []*mockedPee
 	}
 }
 
-func waitForBertyEventType(ctx context.Context, t *testing.T, ms *metadataStore, eventType protocoltypes.EventType, eventCount int, done chan struct{}) {
+func waitForBertyEventType(ctx context.Context, t *testing.T, ms *MetadataStore, eventType protocoltypes.EventType, eventCount int, done chan struct{}) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -230,14 +75,26 @@ func waitForBertyEventType(ctx context.Context, t *testing.T, ms *metadataStore,
 
 	handledEvents := map[string]struct{}{}
 
-	for evt := range ms.Subscribe(ctx) {
-		switch evt.(type) {
-		case *protocoltypes.GroupMetadataEvent:
-			if evt.(*protocoltypes.GroupMetadataEvent).Metadata.EventType != eventType {
+	sub, err := ms.EventBus().Subscribe(new(protocoltypes.GroupMetadataEvent))
+	require.NoError(t, err)
+	defer sub.Close()
+
+	for {
+		var e interface{}
+
+		select {
+		case e = <-sub.Out():
+		case <-ctx.Done():
+			return
+		}
+
+		switch evt := e.(type) {
+		case protocoltypes.GroupMetadataEvent:
+			if evt.Metadata.EventType != eventType {
 				continue
 			}
 
-			eID := string(evt.(*protocoltypes.GroupMetadataEvent).EventContext.ID)
+			eID := string(evt.EventContext.ID)
 
 			if _, ok := handledEvents[eID]; ok {
 				continue
@@ -246,7 +103,7 @@ func waitForBertyEventType(ctx context.Context, t *testing.T, ms *metadataStore,
 			handledEvents[eID] = struct{}{}
 
 			e := &protocoltypes.GroupAddDeviceSecret{}
-			if err := e.Unmarshal(evt.(*protocoltypes.GroupMetadataEvent).Event); err != nil {
+			if err := e.Unmarshal(evt.Event); err != nil {
 				t.Fatalf(" err: %+v\n", err.Error())
 			}
 

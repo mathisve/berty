@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { TouchableOpacity, View, TransformsStyle } from 'react-native'
-import { Text, Icon } from '@ui-kitten/components'
-import { useStyles } from '@berty-tech/styles'
+import { Icon } from '@ui-kitten/components'
+
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store/hooks'
+import { UnifiedText } from './UnifiedText'
 
 // Types
 type TabItemProps = {
@@ -31,11 +34,17 @@ type TabBarProps = {
 // Styles
 const useStylesTab = () => {
 	const [{ text, opacity, border }] = useStyles()
+	const colors = useThemeColor()
+
 	return {
 		tabItemName: text.size.small,
 		tabItemDisable: opacity(0.2),
-		tabBarItemEnable: [border.big, border.color.blue, border.radius.scale(2)],
-		tabBarItemDisable: [border.big, border.color.black, border.radius.scale(2)],
+		tabBarItemEnable: [
+			border.big,
+			border.radius.scale(2),
+			{ borderColor: colors['background-header'] },
+		],
+		tabBarItemDisable: [border.big, border.radius.scale(2), { borderColor: colors['main-text'] }],
 	}
 }
 
@@ -55,7 +64,9 @@ const TabBarItem: React.FC<TabItemProps> = ({
 	buttonDisabled = false,
 }) => {
 	const _styles = useStylesTab()
-	const [{ flex, color, text, padding }] = useStyles()
+	const [{ flex, text, padding }] = useStyles()
+	const colors = useThemeColor()
+
 	return (
 		<TouchableOpacity
 			onPress={() => setEnable(name)}
@@ -73,7 +84,7 @@ const TabBarItem: React.FC<TabItemProps> = ({
 			>
 				<View style={{ height: 25 }}>
 					<Icon
-						fill={enable ? color.blue : color.black}
+						fill={enable ? colors['background-header'] : colors['main-text']}
 						name={icon}
 						pack={iconPack}
 						style={{ transform: iconTransform }}
@@ -81,16 +92,16 @@ const TabBarItem: React.FC<TabItemProps> = ({
 						height={25}
 					/>
 				</View>
-				<Text
+				<UnifiedText
 					style={[
-						text.bold.medium,
+						text.bold,
 						text.align.center,
 						_styles.tabItemName,
-						enable ? text.color.blue : text.color.black,
+						{ color: enable ? colors['background-header'] : colors['main-text'] },
 					]}
 				>
 					{name}
-				</Text>
+				</UnifiedText>
 			</View>
 			<View
 				style={[
@@ -117,20 +128,21 @@ export const TabBar: React.FC<TabBarProps> = ({ tabs, onTabChange }) => {
 	return (
 		<View style={[margin.top.medium]}>
 			<View style={[row.fill]}>
-				{tabs &&
-					tabs.map((obj) => (
-						<TabBarItem
-							key={obj.key}
-							name={obj.name}
-							icon={obj.icon}
-							iconPack={obj.iconPack}
-							iconTransform={obj.iconTransform}
-							setEnable={() => setEnable(obj.key)}
-							enable={selectedTab === obj.key}
-							buttonDisabled={obj.buttonDisabled || false}
-							style={obj.style}
-						/>
-					))}
+				{tabs
+					? tabs.map(obj => (
+							<TabBarItem
+								key={obj.key}
+								name={obj.name}
+								icon={obj.icon}
+								iconPack={obj.iconPack}
+								iconTransform={obj.iconTransform}
+								setEnable={() => setEnable(obj.key)}
+								enable={selectedTab === obj.key}
+								buttonDisabled={obj.buttonDisabled || false}
+								style={obj.style}
+							/>
+					  ))
+					: null}
 			</View>
 		</View>
 	)

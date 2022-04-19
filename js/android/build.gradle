@@ -2,22 +2,25 @@
 
 buildscript {
     ext {
-        buildToolsVersion = "29.0.2"
+        androidXVersion = "1.3.0"
+        androidXAnnotation = "1.2.0"
+        buildToolsVersion = "29.0.3"
         minSdkVersion = 23
-        compileSdkVersion = 29
-        targetSdkVersion = 29
+        compileSdkVersion = 30
+        targetSdkVersion = 30
+        ndkVersion = "22.1.7171670"
     }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath('com.android.tools.build:gradle:4.1.3')
+        classpath('com.android.tools.build:gradle:4.1.0')
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
 
         // TODO: remove this after closed beta
-        classpath 'com.google.firebase:firebase-crashlytics-gradle:2.0.0'
+        classpath 'com.google.gms:google-services:4.3.3'
     }
 }
 
@@ -26,11 +29,23 @@ allprojects {
         mavenLocal()
         maven {
             // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url("$rootDir/../node_modules/react-native/android")
+//            url("$rootDir/../node_modules/react-native/android")
+
+            // Replace AAR from original RN with AAR from react-native-v8
+            url("$rootDir/../node_modules/react-native-v8/dist")
+        }
+        maven {
+            // prebuilt libv8android.so
+            // url("$rootDir/../node_modules/v8-android/dist")
+            url("$rootDir/../node_modules/v8-android-jit/dist")
         }
         maven {
             // Android JSC is installed from npm
             url("$rootDir/../node_modules/jsc-android/dist")
+        }
+        maven {
+            // expo-camera bundles a custom com.google.android:cameraview
+            url "$rootDir/../node_modules/expo-camera/android/maven"
         }
 
         google()
@@ -41,20 +56,17 @@ allprojects {
 
 
 // Upgrading  compile SdkVersion and buildToolsVersion of subProjects
-// Currently react-native-audiowaveform has below commented values
-// compileSdkVersion 23
-// buildToolsVersion "23.0.1"
  subprojects {
-        afterEvaluate {
-            project ->
-                if (project.hasProperty("android")) {
-                    android {
-                        compileSdkVersion = 29
-                        buildToolsVersion = "29.0.2"
-                    }
+    afterEvaluate {
+        project ->
+            if (project.hasProperty("android")) {
+                android {
+                    compileSdkVersion = 29
+                    buildToolsVersion = "29.0.2"
                 }
-        }
+            }
     }
+}
 
 task importEnvFile {
     def envFile = file("${rootDir.getPath()}/../.env")

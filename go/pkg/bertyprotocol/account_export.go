@@ -18,6 +18,7 @@ import (
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
+	"berty.tech/berty/v2/go/internal/cryptoutil"
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
 	orbitdb "berty.tech/go-orbit-db"
@@ -43,7 +44,7 @@ func (s *service) export(ctx context.Context, output io.Writer) error {
 	}
 
 	s.lock.RLock()
-	groups := make([]*groupContext, len(s.openedGroups))
+	groups := make([]*GroupContext, len(s.openedGroups))
 	i := 0
 	for _, gc := range s.openedGroups {
 		groups[i] = gc
@@ -60,7 +61,7 @@ func (s *service) export(ctx context.Context, output io.Writer) error {
 	return nil
 }
 
-func (s *service) exportGroupContext(ctx context.Context, gc *groupContext, tw *tar.Writer) error {
+func (s *service) exportGroupContext(ctx context.Context, gc *GroupContext, tw *tar.Writer) error {
 	if err := s.exportOrbitDBStore(ctx, gc.metadataStore, tw); err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}
@@ -126,7 +127,7 @@ func (s *service) exportAccountProofKey(tw *tar.Writer) error {
 	return exportPrivateKey(tw, sk, exportAccountProofKeyFilename)
 }
 
-func (s *service) exportOrbitDBGroupHeads(gc *groupContext, headsMetadata []cid.Cid, headsMessages []cid.Cid, tw *tar.Writer) error {
+func (s *service) exportOrbitDBGroupHeads(gc *GroupContext, headsMetadata []cid.Cid, headsMessages []cid.Cid, tw *tar.Writer) error {
 	cidsMeta := make([][]byte, len(headsMetadata))
 	for i, id := range headsMetadata {
 		cidsMeta[i] = id.Bytes()
@@ -147,11 +148,17 @@ func (s *service) exportOrbitDBGroupHeads(gc *groupContext, headsMetadata []cid.
 		return errcode.ErrSerialization.Wrap(err)
 	}
 
+	linkKeyArr, err := cryptoutil.GetLinkKeyArray(gc.group)
+	if err != nil {
+		return errcode.ErrSerialization.Wrap(err)
+	}
+
 	headsExport := &protocoltypes.GroupHeadsExport{
 		PublicKey:         gc.group.PublicKey,
 		SignPub:           spkBytes,
 		MetadataHeadsCIDs: cidsMeta,
 		MessagesHeadsCIDs: cidsMessages,
+		LinkKey:           linkKeyArr[:],
 	}
 
 	entryName := base64.RawURLEncoding.EncodeToString(gc.group.PublicKey)
@@ -183,7 +190,7 @@ func (s *service) exportOrbitDBGroupHeads(gc *groupContext, headsMetadata []cid.
 }
 
 func exportPrivateKey(tw *tar.Writer, sk crypto.PrivKey, filename string) error {
-	skBytes, err := sk.Bytes()
+	skBytes, err := crypto.MarshalPrivateKey(sk)
 	if err != nil {
 		return errcode.ErrSerialization.Wrap(err)
 	}
@@ -423,6 +430,7 @@ func restoreOrbitDBHeads(ctx context.Context, odb *BertyOrbitDB) RestoreAccountH
 			if err := odb.setHeadsForGroup(ctx, &protocoltypes.Group{
 				PublicKey: heads.PublicKey,
 				SignPub:   heads.SignPub,
+				LinkKey:   heads.LinkKey,
 			}, metaCIDs, messageCIDs); err != nil {
 				return true, errcode.ErrOrbitDBAppend.Wrap(fmt.Errorf("error while restoring db head: %w", err))
 			}

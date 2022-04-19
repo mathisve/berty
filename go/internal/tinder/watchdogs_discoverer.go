@@ -2,6 +2,7 @@ package tinder
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -11,6 +12,8 @@ import (
 	p2p_peer "github.com/libp2p/go-libp2p-core/peer"
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	"go.uber.org/zap"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 type findPeersTimer struct {
@@ -61,9 +64,16 @@ func newWatchdogsDiscoverer(ctx context.Context, l *zap.Logger, h host.Host, res
 	}, nil
 }
 
-func (w *watchdogsDiscoverer) FindPeers(_ context.Context, ns string, opts ...p2p_discovery.Option) (<-chan p2p_peer.AddrInfo, error) {
-	// override context with our context
-	ctx := w.rootctx
+func (w *watchdogsDiscoverer) FindPeers(ctx context.Context, ns string, opts ...p2p_discovery.Option) (<-chan p2p_peer.AddrInfo, error) {
+	var options p2p_discovery.Options
+	if err := options.Apply(opts...); err != nil {
+		return nil, err
+	}
+
+	if _, ok := options.Other[optionKeepContext]; !ok {
+		// override context with our context
+		ctx = w.rootctx
+	}
 
 	w.mufindpeers.Lock()
 	defer w.mufindpeers.Unlock()
@@ -75,13 +85,14 @@ func (w *watchdogsDiscoverer) FindPeers(_ context.Context, ns string, opts ...p2
 		}
 		ft.T.Reset(w.resetInterval)
 
+		// return alreay existing chan
 		return w.disc.FindPeers(ft.Ctx, ns, opts...)
 	}
 
 	timer := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 
-	w.logger.Debug("watchdogs looking for peers", zap.String("ns", ns))
+	w.logger.Debug("watchdogs looking for peers", logutil.PrivateString("ns", ns))
 	c, err := w.disc.FindPeers(ctx, ns, opts...)
 	if err != nil {
 		cancel()
@@ -91,7 +102,7 @@ func (w *watchdogsDiscoverer) FindPeers(_ context.Context, ns string, opts ...p2
 	t := time.AfterFunc(w.resetInterval, func() {
 		cancel()
 		w.logger.Debug("findpeers expired",
-			zap.String("ns", ns),
+			logutil.PrivateString("ns", ns),
 			zap.Duration("duration", time.Since(timer)),
 		)
 
@@ -129,7 +140,19 @@ func (s *multiDriverDiscoverer) ProtectPeer(id p2p_peer.ID) {
 }
 
 func (s *multiDriverDiscoverer) FindPeers(ctx context.Context, ns string, opts ...p2p_discovery.Option) (<-chan p2p_peer.AddrInfo, error) {
-	s.logger.Debug("find peers started", zap.String("key", ns), zap.Int("drivers", len(s.drivers)))
+	var options p2p_discovery.Options
+	if err := options.Apply(opts...); err != nil {
+		return nil, err
+	}
+
+	var filters []string
+	if f, ok := options.Other[optionFilterDriver]; ok {
+		if filters, ok = f.([]string); !ok {
+			return nil, fmt.Errorf("unable to parse filter driver option")
+		}
+	}
+
+	s.logger.Debug("find peers started", logutil.PrivateString("key", ns), zap.Int("drivers", len(s.drivers)))
 
 	cc := make(chan p2p_peer.AddrInfo)
 	if len(s.drivers) == 0 {
@@ -140,17 +163,21 @@ func (s *multiDriverDiscoverer) FindPeers(ctx context.Context, ns string, opts .
 	ctx, cancel := context.WithCancel(ctx)
 	cdrivers := []*driverChan{}
 	for _, driver := range s.drivers {
+		if shoudlFilterDriver(driver.Name, filters) {
+			continue
+		}
+
 		ch, err := driver.FindPeers(ctx, ns, opts...)
 		if err != nil {
 			s.logger.Warn("failed to run find peers",
 				zap.String("driver", driver.Name),
-				zap.String("key", ns),
+				logutil.PrivateString("ns", ns),
 				zap.Error(err))
 
 			continue
 		}
 
-		s.logger.Debug("findpeer for driver started", zap.String("key", ns), zap.String("driver", driver.Name))
+		s.logger.Debug("findpeer for driver started", zap.String("driver", driver.Name), logutil.PrivateString("ns", ns))
 		cdrivers = append(cdrivers, &driverChan{
 			cc:     ch,
 			driver: driver,
@@ -164,7 +191,7 @@ func (s *multiDriverDiscoverer) FindPeers(ctx context.Context, ns string, opts .
 
 		// @TODO(gfanton): use optimized method for few drivers
 		err := s.selectFindPeers(ctx, cc, cdrivers)
-		s.logger.Debug("find peers done", zap.String("topic", ns), zap.Error(err))
+		s.logger.Debug("find peers done", logutil.PrivateString("ns", ns), zap.Error(err))
 	}()
 
 	return cc, nil
@@ -210,6 +237,8 @@ func (s *multiDriverDiscoverer) selectFindPeers(ctx context.Context, out chan<- 
 			continue
 		}
 
+		topic := in[sel].topic
+
 		// @gfanton(TODO): filter addrs by drivers should be made
 		// directly on the advertiser side, but since most drivers take
 		// addrs directly from host, it's easier (for now) to filter it
@@ -220,17 +249,24 @@ func (s *multiDriverDiscoverer) selectFindPeers(ctx context.Context, out chan<- 
 				Addrs: addrs,
 			}
 
-			topic := in[sel].topic
 			// protect this peer to avoid to be pruned
 			s.ProtectPeer(peer.ID)
+
 			s.logger.Debug("found a peer",
 				zap.String("driver", driver.Name),
-				zap.String("topic", topic),
-				zap.String("peer", filterpeer.ID.String()),
+				logutil.PrivateString("peer", filterpeer.ID.String()),
+				logutil.PrivateString("ns", topic),
 				zap.Any("addrs", filterpeer.Addrs))
 
 			// forward the peer
 			out <- filterpeer
+		} else {
+			s.logger.Debug("found a peer but unable to add it, no valid addrs",
+				zap.String("driver", driver.Name),
+				logutil.PrivateString("peer", peer.ID.String()),
+				logutil.PrivateString("ns", topic),
+				zap.Any("addrs", peer.Addrs),
+				zap.Any("filter addrs", addrs))
 		}
 	}
 

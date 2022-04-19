@@ -4,12 +4,8 @@ import (
 	proximity "berty.tech/berty/v2/go/internal/proximitytransport"
 )
 
-type NativeBleDriver interface {
-	proximity.NativeDriver
-}
-
-type NativeNBDriver interface {
-	proximity.NativeDriver
+type ProximityDriver interface {
+	proximity.ProximityDriver
 }
 
 type ProximityTransport interface {
@@ -17,9 +13,11 @@ type ProximityTransport interface {
 }
 
 func GetProximityTransport(protocolName string) ProximityTransport {
-	t, ok := proximity.TransportMap.Load(protocolName)
+	proximity.TransportMapMutex.RLock()
+	t, ok := proximity.TransportMap[protocolName]
+	proximity.TransportMapMutex.RUnlock()
 	if ok {
-		return t.(proximity.ProximityTransport)
+		return t
 	}
 	return nil
 }

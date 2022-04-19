@@ -27,6 +27,7 @@
     - [BertyGroup](#berty.messenger.v1.BertyGroup)
     - [BertyID](#berty.messenger.v1.BertyID)
     - [BertyLink](#berty.messenger.v1.BertyLink)
+    - [BertyLink.BertyMessageRef](#berty.messenger.v1.BertyLink.BertyMessageRef)
     - [BertyLink.Encrypted](#berty.messenger.v1.BertyLink.Encrypted)
     - [Contact](#berty.messenger.v1.Contact)
     - [ContactAccept](#berty.messenger.v1.ContactAccept)
@@ -72,9 +73,6 @@
     - [EventStream](#berty.messenger.v1.EventStream)
     - [EventStream.Reply](#berty.messenger.v1.EventStream.Reply)
     - [EventStream.Request](#berty.messenger.v1.EventStream.Request)
-    - [GetUsername](#berty.messenger.v1.GetUsername)
-    - [GetUsername.Reply](#berty.messenger.v1.GetUsername.Reply)
-    - [GetUsername.Request](#berty.messenger.v1.GetUsername.Request)
     - [InstanceExportData](#berty.messenger.v1.InstanceExportData)
     - [InstanceExportData.Reply](#berty.messenger.v1.InstanceExportData.Reply)
     - [InstanceExportData.Request](#berty.messenger.v1.InstanceExportData.Request)
@@ -86,6 +84,12 @@
     - [Interact.Request](#berty.messenger.v1.Interact.Request)
     - [Interaction](#berty.messenger.v1.Interaction)
     - [Interaction.ReactionView](#berty.messenger.v1.Interaction.ReactionView)
+    - [InteractionReactionsForEmoji](#berty.messenger.v1.InteractionReactionsForEmoji)
+    - [InteractionReactionsForEmoji.Reply](#berty.messenger.v1.InteractionReactionsForEmoji.Reply)
+    - [InteractionReactionsForEmoji.Request](#berty.messenger.v1.InteractionReactionsForEmoji.Request)
+    - [ListMemberDevices](#berty.messenger.v1.ListMemberDevices)
+    - [ListMemberDevices.Reply](#berty.messenger.v1.ListMemberDevices.Reply)
+    - [ListMemberDevices.Request](#berty.messenger.v1.ListMemberDevices.Request)
     - [LocalConversationState](#berty.messenger.v1.LocalConversationState)
     - [LocalDatabaseState](#berty.messenger.v1.LocalDatabaseState)
     - [Media](#berty.messenger.v1.Media)
@@ -105,10 +109,24 @@
     - [MessageSearch](#berty.messenger.v1.MessageSearch)
     - [MessageSearch.Reply](#berty.messenger.v1.MessageSearch.Reply)
     - [MessageSearch.Request](#berty.messenger.v1.MessageSearch.Request)
+    - [MetadataEvent](#berty.messenger.v1.MetadataEvent)
     - [PaginatedInteractionsOptions](#berty.messenger.v1.PaginatedInteractionsOptions)
     - [ParseDeepLink](#berty.messenger.v1.ParseDeepLink)
     - [ParseDeepLink.Reply](#berty.messenger.v1.ParseDeepLink.Reply)
     - [ParseDeepLink.Request](#berty.messenger.v1.ParseDeepLink.Request)
+    - [PushReceive](#berty.messenger.v1.PushReceive)
+    - [PushReceive.Reply](#berty.messenger.v1.PushReceive.Reply)
+    - [PushReceive.Request](#berty.messenger.v1.PushReceive.Request)
+    - [PushReceivedData](#berty.messenger.v1.PushReceivedData)
+    - [PushSetAutoShare](#berty.messenger.v1.PushSetAutoShare)
+    - [PushSetAutoShare.Reply](#berty.messenger.v1.PushSetAutoShare.Reply)
+    - [PushSetAutoShare.Request](#berty.messenger.v1.PushSetAutoShare.Request)
+    - [PushShareTokenForConversation](#berty.messenger.v1.PushShareTokenForConversation)
+    - [PushShareTokenForConversation.Reply](#berty.messenger.v1.PushShareTokenForConversation.Reply)
+    - [PushShareTokenForConversation.Request](#berty.messenger.v1.PushShareTokenForConversation.Request)
+    - [PushTokenSharedForConversation](#berty.messenger.v1.PushTokenSharedForConversation)
+    - [PushTokenSharedForConversation.Reply](#berty.messenger.v1.PushTokenSharedForConversation.Reply)
+    - [PushTokenSharedForConversation.Request](#berty.messenger.v1.PushTokenSharedForConversation.Request)
     - [Reaction](#berty.messenger.v1.Reaction)
     - [ReplicationServiceRegisterGroup](#berty.messenger.v1.ReplicationServiceRegisterGroup)
     - [ReplicationServiceRegisterGroup.Reply](#berty.messenger.v1.ReplicationServiceRegisterGroup.Reply)
@@ -117,9 +135,6 @@
     - [ReplicationSetAutoEnable.Reply](#berty.messenger.v1.ReplicationSetAutoEnable.Reply)
     - [ReplicationSetAutoEnable.Request](#berty.messenger.v1.ReplicationSetAutoEnable.Request)
     - [ReplyOption](#berty.messenger.v1.ReplyOption)
-    - [SendAck](#berty.messenger.v1.SendAck)
-    - [SendAck.Reply](#berty.messenger.v1.SendAck.Reply)
-    - [SendAck.Request](#berty.messenger.v1.SendAck.Request)
     - [SendContactRequest](#berty.messenger.v1.SendContactRequest)
     - [SendContactRequest.Reply](#berty.messenger.v1.SendContactRequest.Reply)
     - [SendContactRequest.Request](#berty.messenger.v1.SendContactRequest.Request)
@@ -130,6 +145,7 @@
     - [ShareableBertyGroup](#berty.messenger.v1.ShareableBertyGroup)
     - [ShareableBertyGroup.Reply](#berty.messenger.v1.ShareableBertyGroup.Reply)
     - [ShareableBertyGroup.Request](#berty.messenger.v1.ShareableBertyGroup.Request)
+    - [SharedPushToken](#berty.messenger.v1.SharedPushToken)
     - [StreamEvent](#berty.messenger.v1.StreamEvent)
     - [StreamEvent.AccountUpdated](#berty.messenger.v1.StreamEvent.AccountUpdated)
     - [StreamEvent.ContactUpdated](#berty.messenger.v1.StreamEvent.ContactUpdated)
@@ -146,12 +162,19 @@
     - [StreamEvent.Notified.Basic](#berty.messenger.v1.StreamEvent.Notified.Basic)
     - [StreamEvent.Notified.ContactRequestReceived](#berty.messenger.v1.StreamEvent.Notified.ContactRequestReceived)
     - [StreamEvent.Notified.ContactRequestSent](#berty.messenger.v1.StreamEvent.Notified.ContactRequestSent)
+    - [StreamEvent.Notified.GroupInvitation](#berty.messenger.v1.StreamEvent.Notified.GroupInvitation)
     - [StreamEvent.Notified.MessageReceived](#berty.messenger.v1.StreamEvent.Notified.MessageReceived)
     - [SystemInfo](#berty.messenger.v1.SystemInfo)
     - [SystemInfo.DB](#berty.messenger.v1.SystemInfo.DB)
     - [SystemInfo.Messenger](#berty.messenger.v1.SystemInfo.Messenger)
     - [SystemInfo.Reply](#berty.messenger.v1.SystemInfo.Reply)
     - [SystemInfo.Request](#berty.messenger.v1.SystemInfo.Request)
+    - [TyberHostAttach](#berty.messenger.v1.TyberHostAttach)
+    - [TyberHostAttach.Reply](#berty.messenger.v1.TyberHostAttach.Reply)
+    - [TyberHostAttach.Request](#berty.messenger.v1.TyberHostAttach.Request)
+    - [TyberHostSearch](#berty.messenger.v1.TyberHostSearch)
+    - [TyberHostSearch.Reply](#berty.messenger.v1.TyberHostSearch.Reply)
+    - [TyberHostSearch.Request](#berty.messenger.v1.TyberHostSearch.Request)
   
     - [AppMessage.Type](#berty.messenger.v1.AppMessage.Type)
     - [BertyLink.Kind](#berty.messenger.v1.BertyLink.Kind)
@@ -179,10 +202,13 @@
 | ----- | ---- | ----- | ----------- |
 | public_key | [string](#string) |  |  |
 | display_name | [string](#string) |  |  |
-| avatar_cid | [string](#string) |  |  |
 | link | [string](#string) |  |  |
 | service_tokens | [ServiceToken](#berty.messenger.v1.ServiceToken) | repeated |  |
 | replicate_new_groups_automatically | [bool](#bool) |  |  |
+| avatar_cid | [string](#string) |  |  |
+| auto_share_push_token_flag | [bool](#bool) |  |  |
+| device_push_token | [bytes](#bytes) |  |  |
+| device_push_server | [bytes](#bytes) |  |  |
 
 <a name="berty.messenger.v1.AccountGet"></a>
 
@@ -354,7 +380,18 @@ AppMessage is the app layer format
 | kind | [BertyLink.Kind](#berty.messenger.v1.BertyLink.Kind) |  |  |
 | berty_id | [BertyID](#berty.messenger.v1.BertyID) |  |  |
 | berty_group | [BertyGroup](#berty.messenger.v1.BertyGroup) |  |  |
+| berty_message_ref | [BertyLink.BertyMessageRef](#berty.messenger.v1.BertyLink.BertyMessageRef) |  |  |
 | encrypted | [BertyLink.Encrypted](#berty.messenger.v1.BertyLink.Encrypted) |  |  |
+
+<a name="berty.messenger.v1.BertyLink.BertyMessageRef"></a>
+
+### BertyLink.BertyMessageRef
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| account_id | [string](#string) |  |  |
+| group_pk | [string](#string) |  |  |
+| message_id | [string](#string) |  |  |
 
 <a name="berty.messenger.v1.BertyLink.Encrypted"></a>
 
@@ -379,6 +416,7 @@ to test more false-positive guesses.
 | group_secret_sig | [bytes](#bytes) |  |  |
 | group_type | [berty.protocol.v1.GroupType](#berty.protocol.v1.GroupType) |  | clear |
 | group_sign_pub | [bytes](#bytes) |  |  |
+| group_link_key_sig | [bytes](#bytes) |  |  |
 
 <a name="berty.messenger.v1.Contact"></a>
 
@@ -448,7 +486,6 @@ to test more false-positive guesses.
 | type | [Conversation.Type](#berty.messenger.v1.Conversation.Type) |  |  |
 | is_open | [bool](#bool) |  |  |
 | display_name | [string](#string) |  |  |
-| avatar_cid | [string](#string) |  |  |
 | link | [string](#string) |  |  |
 | unread_count | [int32](#int32) |  |  |
 | last_update | [int64](#int64) |  | last_update is used to sort conversations, it should be updated for each &#34;visible&#34; event |
@@ -461,7 +498,10 @@ to test more false-positive guesses.
 | reply_options_cid | [string](#string) |  |  |
 | reply_options | [Interaction](#berty.messenger.v1.Interaction) |  |  |
 | replication_info | [ConversationReplicationInfo](#berty.messenger.v1.ConversationReplicationInfo) | repeated |  |
-| info_date | [int64](#int64) |  | info_date is used when SetGroupInfo was called |
+| avatar_cid | [string](#string) |  |  |
+| info_date | [int64](#int64) |  | info_date is used when SetGroupInfo is called |
+| shared_push_token_identifier | [string](#string) |  |  |
+| local_member_public_key | [string](#string) |  |  |
 
 <a name="berty.messenger.v1.ConversationClose"></a>
 
@@ -687,22 +727,6 @@ to test more false-positive guesses.
 | ----- | ---- | ----- | ----------- |
 | shallow_amount | [int32](#int32) |  |  |
 
-<a name="berty.messenger.v1.GetUsername"></a>
-
-### GetUsername
-
-<a name="berty.messenger.v1.GetUsername.Reply"></a>
-
-### GetUsername.Reply
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| username | [string](#string) |  |  |
-
-<a name="berty.messenger.v1.GetUsername.Request"></a>
-
-### GetUsername.Request
-
 <a name="berty.messenger.v1.InstanceExportData"></a>
 
 ### InstanceExportData
@@ -766,6 +790,7 @@ to test more false-positive guesses.
 | conversation_public_key | [string](#string) |  |  |
 | media_cids | [string](#string) | repeated |  |
 | target_cid | [string](#string) |  |  |
+| metadata | [bool](#bool) |  |  |
 
 <a name="berty.messenger.v1.Interaction"></a>
 
@@ -787,6 +812,7 @@ to test more false-positive guesses.
 | target_cid | [string](#string) |  |  |
 | medias | [Media](#berty.messenger.v1.Media) | repeated |  |
 | reactions | [Interaction.ReactionView](#berty.messenger.v1.Interaction.ReactionView) | repeated | specific to client model |
+| out_of_store_message | [bool](#bool) |  |  |
 
 <a name="berty.messenger.v1.Interaction.ReactionView"></a>
 
@@ -797,6 +823,48 @@ to test more false-positive guesses.
 | emoji | [string](#string) |  |  |
 | own_state | [bool](#bool) |  |  |
 | count | [uint64](#uint64) |  |  |
+
+<a name="berty.messenger.v1.InteractionReactionsForEmoji"></a>
+
+### InteractionReactionsForEmoji
+
+<a name="berty.messenger.v1.InteractionReactionsForEmoji.Reply"></a>
+
+### InteractionReactionsForEmoji.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| reactions | [Reaction](#berty.messenger.v1.Reaction) | repeated |  |
+
+<a name="berty.messenger.v1.InteractionReactionsForEmoji.Request"></a>
+
+### InteractionReactionsForEmoji.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| interaction_cid | [string](#string) |  |  |
+| emoji | [string](#string) |  |  |
+
+<a name="berty.messenger.v1.ListMemberDevices"></a>
+
+### ListMemberDevices
+
+<a name="berty.messenger.v1.ListMemberDevices.Reply"></a>
+
+### ListMemberDevices.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| device | [Device](#berty.messenger.v1.Device) |  |  |
+
+<a name="berty.messenger.v1.ListMemberDevices.Request"></a>
+
+### ListMemberDevices.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| conversation_pk | [string](#string) |  |  |
+| member_pk | [string](#string) |  |  |
 
 <a name="berty.messenger.v1.LocalConversationState"></a>
 
@@ -820,6 +888,7 @@ to test more false-positive guesses.
 | replicate_flag | [bool](#bool) |  |  |
 | local_conversations_state | [LocalConversationState](#berty.messenger.v1.LocalConversationState) | repeated |  |
 | account_link | [string](#string) |  |  |
+| auto_share_push_token_flag | [bool](#bool) |  |  |
 
 <a name="berty.messenger.v1.Media"></a>
 
@@ -969,6 +1038,17 @@ Composite primary key
 | ref_cid | [string](#string) |  |  |
 | oldest_to_newest | [bool](#bool) |  |  |
 
+<a name="berty.messenger.v1.MetadataEvent"></a>
+
+### MetadataEvent
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| cid | [string](#string) |  |  |
+| conversation_public_key | [string](#string) |  |  |
+| metadata_event_type | [berty.protocol.v1.EventType](#berty.protocol.v1.EventType) |  |  |
+| payload | [bytes](#bytes) |  |  |
+
 <a name="berty.messenger.v1.PaginatedInteractionsOptions"></a>
 
 ### PaginatedInteractionsOptions
@@ -1002,6 +1082,88 @@ Composite primary key
 | ----- | ---- | ----- | ----------- |
 | link | [string](#string) |  |  |
 | passphrase | [bytes](#bytes) |  | optional passphase to decrypt the link |
+
+<a name="berty.messenger.v1.PushReceive"></a>
+
+### PushReceive
+
+<a name="berty.messenger.v1.PushReceive.Reply"></a>
+
+### PushReceive.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| data | [PushReceivedData](#berty.messenger.v1.PushReceivedData) |  |  |
+
+<a name="berty.messenger.v1.PushReceive.Request"></a>
+
+### PushReceive.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| payload | [bytes](#bytes) |  |  |
+
+<a name="berty.messenger.v1.PushReceivedData"></a>
+
+### PushReceivedData
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| protocol_data | [berty.protocol.v1.PushReceive.Reply](#berty.protocol.v1.PushReceive.Reply) |  |  |
+| interaction | [Interaction](#berty.messenger.v1.Interaction) |  |  |
+| already_received | [bool](#bool) |  |  |
+
+<a name="berty.messenger.v1.PushSetAutoShare"></a>
+
+### PushSetAutoShare
+
+<a name="berty.messenger.v1.PushSetAutoShare.Reply"></a>
+
+### PushSetAutoShare.Reply
+
+<a name="berty.messenger.v1.PushSetAutoShare.Request"></a>
+
+### PushSetAutoShare.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| enabled | [bool](#bool) |  |  |
+
+<a name="berty.messenger.v1.PushShareTokenForConversation"></a>
+
+### PushShareTokenForConversation
+
+<a name="berty.messenger.v1.PushShareTokenForConversation.Reply"></a>
+
+### PushShareTokenForConversation.Reply
+
+<a name="berty.messenger.v1.PushShareTokenForConversation.Request"></a>
+
+### PushShareTokenForConversation.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| conversation_pk | [string](#string) |  |  |
+
+<a name="berty.messenger.v1.PushTokenSharedForConversation"></a>
+
+### PushTokenSharedForConversation
+
+<a name="berty.messenger.v1.PushTokenSharedForConversation.Reply"></a>
+
+### PushTokenSharedForConversation.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| push_token | [SharedPushToken](#berty.messenger.v1.SharedPushToken) |  |  |
+
+<a name="berty.messenger.v1.PushTokenSharedForConversation.Request"></a>
+
+### PushTokenSharedForConversation.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| conversation_pk | [string](#string) |  |  |
 
 <a name="berty.messenger.v1.Reaction"></a>
 
@@ -1057,23 +1219,6 @@ Composite primary key
 | ----- | ---- | ----- | ----------- |
 | display | [string](#string) |  |  |
 | payload | [string](#string) |  |  |
-
-<a name="berty.messenger.v1.SendAck"></a>
-
-### SendAck
-
-<a name="berty.messenger.v1.SendAck.Reply"></a>
-
-### SendAck.Reply
-
-<a name="berty.messenger.v1.SendAck.Request"></a>
-
-### SendAck.Request
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| group_pk | [bytes](#bytes) |  |  |
-| message_id | [bytes](#bytes) |  |  |
 
 <a name="berty.messenger.v1.SendContactRequest"></a>
 
@@ -1145,6 +1290,17 @@ Composite primary key
 | group_pk | [bytes](#bytes) |  |  |
 | group_name | [string](#string) |  |  |
 
+<a name="berty.messenger.v1.SharedPushToken"></a>
+
+### SharedPushToken
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| device_public_key | [string](#string) |  |  |
+| member_public_key | [string](#string) |  |  |
+| conversation_public_key | [string](#string) |  |  |
+| token | [string](#string) |  |  |
+
 <a name="berty.messenger.v1.StreamEvent"></a>
 
 ### StreamEvent
@@ -1212,6 +1368,7 @@ Composite primary key
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | cid | [string](#string) |  |  |
+| conversation_public_key | [string](#string) |  |  |
 
 <a name="berty.messenger.v1.StreamEvent.InteractionUpdated"></a>
 
@@ -1272,6 +1429,15 @@ Composite primary key
 | ----- | ---- | ----- | ----------- |
 | contact | [Contact](#berty.messenger.v1.Contact) |  |  |
 
+<a name="berty.messenger.v1.StreamEvent.Notified.GroupInvitation"></a>
+
+### StreamEvent.Notified.GroupInvitation
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| conversation | [Conversation](#berty.messenger.v1.Conversation) |  |  |
+| contact | [Contact](#berty.messenger.v1.Contact) |  |  |
+
 <a name="berty.messenger.v1.StreamEvent.Notified.MessageReceived"></a>
 
 ### StreamEvent.Notified.MessageReceived
@@ -1300,7 +1466,10 @@ Composite primary key
 | devices | [int64](#int64) |  |  |
 | service_tokens | [int64](#int64) |  |  |
 | conversation_replication_info | [int64](#int64) |  |  |
-| reactions | [int64](#int64) |  | older, more recent |
+| reactions | [int64](#int64) |  |  |
+| metadata_events | [int64](#int64) |  |  |
+| medias | [int64](#int64) |  |  |
+| shared_push_tokens | [int64](#int64) |  | older, more recent |
 
 <a name="berty.messenger.v1.SystemInfo.Messenger"></a>
 
@@ -1325,6 +1494,44 @@ Composite primary key
 <a name="berty.messenger.v1.SystemInfo.Request"></a>
 
 ### SystemInfo.Request
+
+<a name="berty.messenger.v1.TyberHostAttach"></a>
+
+### TyberHostAttach
+
+<a name="berty.messenger.v1.TyberHostAttach.Reply"></a>
+
+### TyberHostAttach.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| address | [string](#string) |  |  |
+
+<a name="berty.messenger.v1.TyberHostAttach.Request"></a>
+
+### TyberHostAttach.Request
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| addresses | [string](#string) | repeated |  |
+
+<a name="berty.messenger.v1.TyberHostSearch"></a>
+
+### TyberHostSearch
+
+<a name="berty.messenger.v1.TyberHostSearch.Reply"></a>
+
+### TyberHostSearch.Reply
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hostname | [string](#string) |  |  |
+| ipv4 | [string](#string) | repeated |  |
+| ipv6 | [string](#string) | repeated |  |
+
+<a name="berty.messenger.v1.TyberHostSearch.Request"></a>
+
+### TyberHostSearch.Request
 
  
 
@@ -1354,6 +1561,7 @@ Composite primary key
 | ContactInviteV1Kind | 1 |  |
 | GroupV1Kind | 2 |  |
 | EncryptedV1Kind | 3 |  |
+| MessageV1Kind | 4 |  |
 
 <a name="berty.messenger.v1.Contact.State"></a>
 
@@ -1414,6 +1622,7 @@ Composite primary key
 | TypeMessageReceived | 2 |  |
 | TypeContactRequestSent | 3 |  |
 | TypeContactRequestReceived | 4 |  |
+| TypeGroupInvitation | 5 |  |
 
 <a name="berty.messenger.v1.StreamEvent.Type"></a>
 
@@ -1454,7 +1663,6 @@ Today, most of the Berty Messenger logic is implemented directly in the applicat
 | ParseDeepLink | [ParseDeepLink.Request](#berty.messenger.v1.ParseDeepLink.Request) | [ParseDeepLink.Reply](#berty.messenger.v1.ParseDeepLink.Reply) | ParseDeepLink parses a link in the form of berty://xxx or https://berty.tech/id# and returns a structure that can be used to display information. This action is read-only. |
 | SendContactRequest | [SendContactRequest.Request](#berty.messenger.v1.SendContactRequest.Request) | [SendContactRequest.Reply](#berty.messenger.v1.SendContactRequest.Reply) | SendContactRequest takes the payload received from ParseDeepLink and send a contact request using the Berty Protocol. |
 | SendReplyOptions | [SendReplyOptions.Request](#berty.messenger.v1.SendReplyOptions.Request) | [SendReplyOptions.Reply](#berty.messenger.v1.SendReplyOptions.Reply) | SendReplyOptions sends a list of prefilled response options to a group. |
-| SendAck | [SendAck.Request](#berty.messenger.v1.SendAck.Request) | [SendAck.Reply](#berty.messenger.v1.SendAck.Reply) | SendAck sends an acknowledge payload for given message id. |
 | SystemInfo | [SystemInfo.Request](#berty.messenger.v1.SystemInfo.Request) | [SystemInfo.Reply](#berty.messenger.v1.SystemInfo.Reply) | SystemInfo returns runtime information. |
 | EchoTest | [EchoTest.Request](#berty.messenger.v1.EchoTest.Request) | [EchoTest.Reply](#berty.messenger.v1.EchoTest.Reply) stream | Use to test stream. |
 | EchoDuplexTest | [EchoDuplexTest.Request](#berty.messenger.v1.EchoDuplexTest.Request) stream | [EchoDuplexTest.Reply](#berty.messenger.v1.EchoDuplexTest.Reply) stream | Use to test duplex stream. |
@@ -1474,12 +1682,19 @@ Today, most of the Berty Messenger logic is implemented directly in the applicat
 | ReplicationServiceRegisterGroup | [ReplicationServiceRegisterGroup.Request](#berty.messenger.v1.ReplicationServiceRegisterGroup.Request) | [ReplicationServiceRegisterGroup.Reply](#berty.messenger.v1.ReplicationServiceRegisterGroup.Reply) | ReplicationServiceRegisterGroup Asks a replication service to distribute a group contents |
 | ReplicationSetAutoEnable | [ReplicationSetAutoEnable.Request](#berty.messenger.v1.ReplicationSetAutoEnable.Request) | [ReplicationSetAutoEnable.Reply](#berty.messenger.v1.ReplicationSetAutoEnable.Reply) | ReplicationSetAutoEnable Sets whether new groups should be replicated automatically or not |
 | BannerQuote | [BannerQuote.Request](#berty.messenger.v1.BannerQuote.Request) | [BannerQuote.Reply](#berty.messenger.v1.BannerQuote.Reply) | BannerQuote returns the quote of the day. |
-| GetUsername | [GetUsername.Request](#berty.messenger.v1.GetUsername.Request) | [GetUsername.Reply](#berty.messenger.v1.GetUsername.Reply) | GetUsername returns the name of the device/user using Android/iOS/universal API |
 | InstanceExportData | [InstanceExportData.Request](#berty.messenger.v1.InstanceExportData.Request) | [InstanceExportData.Reply](#berty.messenger.v1.InstanceExportData.Reply) stream | InstanceExportData exports instance data |
 | MediaPrepare | [MediaPrepare.Request](#berty.messenger.v1.MediaPrepare.Request) stream | [MediaPrepare.Reply](#berty.messenger.v1.MediaPrepare.Reply) | MediaPrepare allows to upload a file and returns a cid to attach to messages |
 | MediaRetrieve | [MediaRetrieve.Request](#berty.messenger.v1.MediaRetrieve.Request) | [MediaRetrieve.Reply](#berty.messenger.v1.MediaRetrieve.Reply) stream | MediaRetrieve allows to download a file attached to a message |
 | MediaGetRelated | [MediaGetRelated.Request](#berty.messenger.v1.MediaGetRelated.Request) | [MediaGetRelated.Reply](#berty.messenger.v1.MediaGetRelated.Reply) | MediaGetRelated Gets previous/next media to be played after current |
 | MessageSearch | [MessageSearch.Request](#berty.messenger.v1.MessageSearch.Request) | [MessageSearch.Reply](#berty.messenger.v1.MessageSearch.Reply) | MessageSearch |
+| ListMemberDevices | [ListMemberDevices.Request](#berty.messenger.v1.ListMemberDevices.Request) | [ListMemberDevices.Reply](#berty.messenger.v1.ListMemberDevices.Reply) stream | ListMemberDevices Lists devices for a member |
+| TyberHostSearch | [TyberHostSearch.Request](#berty.messenger.v1.TyberHostSearch.Request) | [TyberHostSearch.Reply](#berty.messenger.v1.TyberHostSearch.Reply) stream | TyberHostSearch |
+| TyberHostAttach | [TyberHostAttach.Request](#berty.messenger.v1.TyberHostAttach.Request) | [TyberHostAttach.Reply](#berty.messenger.v1.TyberHostAttach.Reply) | TyberHostAttach |
+| PushSetAutoShare | [PushSetAutoShare.Request](#berty.messenger.v1.PushSetAutoShare.Request) | [PushSetAutoShare.Reply](#berty.messenger.v1.PushSetAutoShare.Reply) | PushSetAutoShare Sets whether new groups should receive our push token automatically or not |
+| PushShareTokenForConversation | [PushShareTokenForConversation.Request](#berty.messenger.v1.PushShareTokenForConversation.Request) | [PushShareTokenForConversation.Reply](#berty.messenger.v1.PushShareTokenForConversation.Reply) | PushShareTokenForConversation Share a push token for a conversation |
+| PushTokenSharedForConversation | [PushTokenSharedForConversation.Request](#berty.messenger.v1.PushTokenSharedForConversation.Request) | [PushTokenSharedForConversation.Reply](#berty.messenger.v1.PushTokenSharedForConversation.Reply) stream | PushTokenSharedForConversation |
+| PushReceive | [PushReceive.Request](#berty.messenger.v1.PushReceive.Request) | [PushReceive.Reply](#berty.messenger.v1.PushReceive.Reply) | PushReceive handles a push payload, decrypts it if possible, adds it to the local store |
+| InteractionReactionsForEmoji | [InteractionReactionsForEmoji.Request](#berty.messenger.v1.InteractionReactionsForEmoji.Request) | [InteractionReactionsForEmoji.Reply](#berty.messenger.v1.InteractionReactionsForEmoji.Reply) | InteractionReactionsForEmoji returns a list of reactions on an interaction for a specific emoji |
 
  
 

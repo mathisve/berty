@@ -1,4 +1,4 @@
-import beapi from '@berty-tech/api'
+import beapi from '@berty/api'
 
 import { UnaryType, RequestStreamType, ResponseStreamType } from './types'
 
@@ -8,6 +8,8 @@ export type ServiceClientType<S> = S extends beapi.protocol.ProtocolService
 	? WelshAccountServiceClient
 	: S extends beapi.messenger.MessengerService
 	? WelshMessengerServiceClient
+	: S extends beapi.bridge.BridgeService
+	? WelshBridgeServiceClient
 	: never
 
 export interface WelshProtocolServiceClient {
@@ -50,6 +52,7 @@ export interface WelshProtocolServiceClient {
 		beapi.protocol.ProtocolService['debugInspectGroupStore']
 	>
 	debugGroup: UnaryType<beapi.protocol.ProtocolService['debugGroup']>
+	debugAuthServiceSetToken: UnaryType<beapi.protocol.ProtocolService['debugAuthServiceSetToken']>
 	systemInfo: UnaryType<beapi.protocol.ProtocolService['systemInfo']>
 	authServiceInitFlow: UnaryType<beapi.protocol.ProtocolService['authServiceInitFlow']>
 	authServiceCompleteFlow: UnaryType<beapi.protocol.ProtocolService['authServiceCompleteFlow']>
@@ -60,6 +63,11 @@ export interface WelshProtocolServiceClient {
 	peerList: UnaryType<beapi.protocol.ProtocolService['peerList']>
 	attachmentPrepare: RequestStreamType<beapi.protocol.ProtocolService['attachmentPrepare']>
 	attachmentRetrieve: ResponseStreamType<beapi.protocol.ProtocolService['attachmentRetrieve']>
+	pushReceive: UnaryType<beapi.protocol.ProtocolService['pushReceive']>
+	pushSend: UnaryType<beapi.protocol.ProtocolService['pushSend']>
+	pushShareToken: UnaryType<beapi.protocol.ProtocolService['pushShareToken']>
+	pushSetDeviceToken: UnaryType<beapi.protocol.ProtocolService['pushSetDeviceToken']>
+	pushSetServer: UnaryType<beapi.protocol.ProtocolService['pushSetServer']>
 }
 
 export interface WelshAccountServiceClient {
@@ -74,9 +82,23 @@ export interface WelshAccountServiceClient {
 	listAccounts: UnaryType<beapi.account.AccountService['listAccounts']>
 	deleteAccount: UnaryType<beapi.account.AccountService['deleteAccount']>
 	importAccount: UnaryType<beapi.account.AccountService['importAccount']>
+	importAccountWithProgress: ResponseStreamType<
+		beapi.account.AccountService['importAccountWithProgress']
+	>
 	createAccount: UnaryType<beapi.account.AccountService['createAccount']>
 	updateAccount: UnaryType<beapi.account.AccountService['updateAccount']>
 	getGRPCListenerAddrs: UnaryType<beapi.account.AccountService['getGRPCListenerAddrs']>
+	logfileList: UnaryType<beapi.account.AccountService['logfileList']>
+	getUsername: UnaryType<beapi.account.AccountService['getUsername']>
+	networkConfigSet: UnaryType<beapi.account.AccountService['networkConfigSet']>
+	networkConfigGet: UnaryType<beapi.account.AccountService['networkConfigGet']>
+	networkConfigGetPreset: UnaryType<beapi.account.AccountService['networkConfigGetPreset']>
+	pushReceive: UnaryType<beapi.account.AccountService['pushReceive']>
+	pushPlatformTokenRegister: UnaryType<beapi.account.AccountService['pushPlatformTokenRegister']>
+	appStoragePut: UnaryType<beapi.account.AccountService['appStoragePut']>
+	appStorageGet: UnaryType<beapi.account.AccountService['appStorageGet']>
+	appStorageRemove: UnaryType<beapi.account.AccountService['appStorageRemove']>
+	getOpenedAccount: UnaryType<beapi.account.AccountService['getOpenedAccount']>
 }
 
 export interface WelshMessengerServiceClient {
@@ -87,7 +109,6 @@ export interface WelshMessengerServiceClient {
 	parseDeepLink: UnaryType<beapi.messenger.MessengerService['parseDeepLink']>
 	sendContactRequest: UnaryType<beapi.messenger.MessengerService['sendContactRequest']>
 	sendReplyOptions: UnaryType<beapi.messenger.MessengerService['sendReplyOptions']>
-	sendAck: UnaryType<beapi.messenger.MessengerService['sendAck']>
 	systemInfo: UnaryType<beapi.messenger.MessengerService['systemInfo']>
 	echoTest: ResponseStreamType<beapi.messenger.MessengerService['echoTest']>
 	echoDuplexTest: never
@@ -109,10 +130,32 @@ export interface WelshMessengerServiceClient {
 	>
 	replicationSetAutoEnable: UnaryType<beapi.messenger.MessengerService['replicationSetAutoEnable']>
 	bannerQuote: UnaryType<beapi.messenger.MessengerService['bannerQuote']>
-	getUsername: UnaryType<beapi.messenger.MessengerService['getUsername']>
 	instanceExportData: ResponseStreamType<beapi.messenger.MessengerService['instanceExportData']>
 	mediaPrepare: RequestStreamType<beapi.messenger.MessengerService['mediaPrepare']>
 	mediaRetrieve: ResponseStreamType<beapi.messenger.MessengerService['mediaRetrieve']>
 	mediaGetRelated: UnaryType<beapi.messenger.MessengerService['mediaGetRelated']>
 	messageSearch: UnaryType<beapi.messenger.MessengerService['messageSearch']>
+	listMemberDevices: ResponseStreamType<beapi.messenger.MessengerService['listMemberDevices']>
+	tyberHostSearch: ResponseStreamType<beapi.messenger.MessengerService['tyberHostSearch']>
+	tyberHostAttach: UnaryType<beapi.messenger.MessengerService['tyberHostAttach']>
+	pushSetAutoShare: UnaryType<beapi.messenger.MessengerService['pushSetAutoShare']>
+	pushShareTokenForConversation: UnaryType<
+		beapi.messenger.MessengerService['pushShareTokenForConversation']
+	>
+	pushTokenSharedForConversation: ResponseStreamType<
+		beapi.messenger.MessengerService['pushTokenSharedForConversation']
+	>
+	pushReceive: UnaryType<beapi.messenger.MessengerService['pushReceive']>
+	interactionReactionsForEmoji: UnaryType<
+		beapi.messenger.MessengerService['interactionReactionsForEmoji']
+	>
+}
+
+export interface WelshBridgeServiceClient {
+	clientInvokeUnary: UnaryType<beapi.bridge.BridgeService['clientInvokeUnary']>
+	createClientStream: UnaryType<beapi.bridge.BridgeService['createClientStream']>
+	clientStreamSend: UnaryType<beapi.bridge.BridgeService['clientStreamSend']>
+	clientStreamRecv: UnaryType<beapi.bridge.BridgeService['clientStreamRecv']>
+	clientStreamClose: UnaryType<beapi.bridge.BridgeService['clientStreamClose']>
+	clientStreamCloseAndRecv: UnaryType<beapi.bridge.BridgeService['clientStreamCloseAndRecv']>
 }

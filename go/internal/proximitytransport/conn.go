@@ -14,6 +14,8 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+
+	"berty.tech/berty/v2/go/internal/logutil"
 )
 
 // Conn is a manet.Conn.
@@ -42,7 +44,7 @@ type Conn struct {
 // newConn returns an inbound or outbound tpt.CapableConn upgraded from a Conn.
 func newConn(ctx context.Context, t *proximityTransport, remoteMa ma.Multiaddr,
 	remotePID peer.ID, inbound bool) (tpt.CapableConn, error) {
-	t.logger.Debug("newConn()", zap.String("remoteMa", remoteMa.String()), zap.Bool("inbound", inbound))
+	t.logger.Debug("newConn()", logutil.PrivateString("remoteMa", remoteMa.String()), zap.Bool("inbound", inbound))
 
 	// Creates a manet.Conn
 	pr, pw := io.Pipe()
@@ -62,7 +64,9 @@ func newConn(ctx context.Context, t *proximityTransport, remoteMa ma.Multiaddr,
 	}
 
 	// Stores the conn in connMap, will be deleted during conn.Close()
-	t.connMap.Store(maconn.RemoteAddr().String(), maconn)
+	t.connMapMutex.Lock()
+	t.connMap[maconn.RemoteAddr().String()] = maconn
+	t.connMapMutex.Unlock()
 
 	// Configure mplex and run it
 	maconn.mp.addInputCache(t.cache)
@@ -79,7 +83,7 @@ func newConn(ctx context.Context, t *proximityTransport, remoteMa ma.Multiaddr,
 // Read reads data from the connection.
 // Timeout handled by the native driver.
 func (c *Conn) Read(payload []byte) (n int, err error) {
-	c.transport.logger.Debug("Conn.Read", zap.String("remoteAddr", c.RemoteAddr().String()))
+	c.transport.logger.Debug("Conn.Read", logutil.PrivateString("remoteAddr", c.RemoteAddr().String()))
 	if c.ctx.Err() != nil {
 		c.transport.logger.Error("Conn.Read failed: conn already closed")
 		return 0, fmt.Errorf("error: Conn.Read failed: conn already closed")
@@ -98,7 +102,7 @@ func (c *Conn) Read(payload []byte) (n int, err error) {
 // Write writes data to the connection.
 // Timeout handled by the native driver.
 func (c *Conn) Write(payload []byte) (n int, err error) {
-	c.transport.logger.Debug("Conn.Write", zap.String("remoteAddr", c.RemoteAddr().String()), zap.Binary("payload", payload))
+	c.transport.logger.Debug("Conn.Write", logutil.PrivateString("remoteAddr", c.RemoteAddr().String()), logutil.PrivateBinary("payload", payload))
 	if c.ctx.Err() != nil {
 		return 0, fmt.Errorf("error: Conn.Write failed: conn already closed")
 	}
@@ -134,7 +138,12 @@ func (c *Conn) Close() error {
 	c.readOut.Close()
 
 	// Removes conn from connmgr's connMap
-	c.transport.connMap.Delete(c.RemoteAddr().String())
+	c.transport.connMapMutex.Lock()
+	delete(c.transport.connMap, c.RemoteAddr().String())
+	c.transport.connMapMutex.Unlock()
+
+	// Disconnect the driver
+	c.transport.driver.CloseConnWithPeer(c.RemoteAddr().String())
 
 	return nil
 }

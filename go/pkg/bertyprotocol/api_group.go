@@ -8,15 +8,15 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 
 	"berty.tech/berty/v2/go/internal/ipfsutil"
+	"berty.tech/berty/v2/go/internal/logutil"
 	"berty.tech/berty/v2/go/internal/tinder"
 	"berty.tech/berty/v2/go/pkg/errcode"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
 )
 
-func (s *service) GroupInfo(_ context.Context, req *protocoltypes.GroupInfo_Request) (*protocoltypes.GroupInfo_Reply, error) {
+func (s *service) GroupInfo(ctx context.Context, req *protocoltypes.GroupInfo_Request) (*protocoltypes.GroupInfo_Reply, error) {
 	var (
 		g   *protocoltypes.Group
 		err error
@@ -29,7 +29,7 @@ func (s *service) GroupInfo(_ context.Context, req *protocoltypes.GroupInfo_Requ
 			return nil, errcode.ErrInvalidInput.Wrap(err)
 		}
 
-		g, err = s.getGroupForPK(pk)
+		g, err = s.getGroupForPK(ctx, pk)
 		if err != nil {
 			return nil, errcode.TODO.Wrap(err)
 		}
@@ -52,12 +52,12 @@ func (s *service) GroupInfo(_ context.Context, req *protocoltypes.GroupInfo_Requ
 		return nil, errcode.TODO.Wrap(err)
 	}
 
-	member, err := md.member.GetPublic().Raw()
+	member, err := md.PrivateMember().GetPublic().Raw()
 	if err != nil {
 		return nil, errcode.ErrSerialization.Wrap(err)
 	}
 
-	device, err := md.device.GetPublic().Raw()
+	device, err := md.PrivateDevice().GetPublic().Raw()
 	if err != nil {
 		return nil, errcode.ErrSerialization.Wrap(err)
 	}
@@ -75,7 +75,7 @@ func (s *service) ActivateGroup(ctx context.Context, req *protocoltypes.Activate
 		return nil, errcode.ErrInvalidInput.Wrap(err)
 	}
 
-	err = s.activateGroup(pk, req.LocalOnly)
+	err = s.activateGroup(ctx, pk, req.LocalOnly)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
@@ -97,7 +97,7 @@ func (s *service) DeactivateGroup(_ context.Context, req *protocoltypes.Deactiva
 }
 
 func (s *service) MonitorGroup(req *protocoltypes.MonitorGroup_Request, srv protocoltypes.ProtocolService_MonitorGroupServer) error {
-	g, err := s.getContextGroupForID(req.GroupPK)
+	g, err := s.GetContextGroupForID(req.GroupPK)
 	if err != nil {
 		return errcode.ErrGroupMissing.Wrap(err)
 	}
@@ -132,7 +132,7 @@ func (s *service) MonitorGroup(req *protocoltypes.MonitorGroup_Request, srv prot
 			// trim floodsub topic (if present)
 			e.Topic = strings.TrimPrefix(e.Topic, "floodsub:")
 
-			s.logger.Debug("got topic", zap.String("ns", e.Topic), zap.String("ns to match", topic))
+			s.logger.Debug("got topic", logutil.PrivateString("ns", e.Topic), logutil.PrivateString("ns to match", topic))
 			// skip if we are filtering by topic
 			if topic != "" && topic != e.Topic {
 				continue
@@ -185,7 +185,7 @@ func monitorHandlePubsubEvent(e *ipfsutil.EvtPubSubTopic, h host.Host) *protocol
 			m.PeerJoin.Maddrs[i] = conn.RemoteMultiaddr().String()
 		}
 
-	case ipfsutil.TypeEventMonitorPeerLeaved:
+	case ipfsutil.TypeEventMonitorPeerLeft:
 		m.Type = protocoltypes.TypeEventMonitorPeerLeave
 		m.PeerLeave = &protocoltypes.MonitorGroup_EventMonitorPeerLeave{}
 

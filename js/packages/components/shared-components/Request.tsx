@@ -1,18 +1,17 @@
 import React, { useState } from 'react'
 import { View, StyleProp, TouchableOpacity, ViewStyle } from 'react-native'
-import { Text, Icon, Toggle } from '@ui-kitten/components'
+import { Icon } from '@ui-kitten/components'
 
-import { useContact } from '@berty-tech/store/hooks'
-import { useStyles, ColorsTypes } from '@berty-tech/styles'
+import { useThemeColor } from '@berty/store/hooks'
+import { useStyles, ColorsTypes } from '@berty/styles'
+import { Toggle } from '@berty/components/shared-components/Toggle'
+import { useContact } from '@berty/hooks'
 
 import { TabBar } from './TabBar'
 import { FingerprintContent } from './FingerprintContent'
 import { Modal } from './Modal'
 import { ContactAvatar } from '../avatars'
-
-//
-// RequestButtons
-//
+import { UnifiedText } from './UnifiedText'
 
 // Types
 
@@ -39,12 +38,20 @@ const RequestButtonItem: React.FC<RequestButtonItemProps> = ({
 	title,
 	action = null,
 	iconSize = 25,
-	iconColor = 'blue',
-	titleColor = 'blue',
+	iconColor,
+	titleColor,
 	style = null,
 	disabled = false,
 }) => {
 	const [{ row, flex, text, opacity }] = useStyles()
+	const colors = useThemeColor()
+
+	if (!iconColor) {
+		iconColor = colors['background-header']
+	}
+	if (!titleColor) {
+		titleColor = colors['background-header']
+	}
 	return (
 		<TouchableOpacity
 			activeOpacity={disabled ? 0.5 : 0.2}
@@ -58,14 +65,14 @@ const RequestButtonItem: React.FC<RequestButtonItemProps> = ({
 				fill={iconColor}
 				style={[row.item.justify]}
 			/>
-			<Text style={[text.bold.medium, text.size.medium, row.item.justify, { color: titleColor }]}>
+			<UnifiedText style={[text.bold, row.item.justify, { color: titleColor }]}>
 				{title}
-			</Text>
+			</UnifiedText>
 		</TouchableOpacity>
 	)
 }
 
-export const RequestButtons: React.FC<RequestButtonsProps> = ({ buttons = null }) => {
+const RequestButtons: React.FC<RequestButtonsProps> = ({ buttons = null }) => {
 	const [{ row, padding, margin }] = useStyles()
 	return (
 		<View style={[row.left, padding.medium, margin.top.medium]}>
@@ -74,66 +81,12 @@ export const RequestButtons: React.FC<RequestButtonsProps> = ({ buttons = null }
 	)
 }
 
-//
-// RequestAvatar => (Group and contact)
-//
-
-// Types
-type RequestAvatarProps = {
-	seed?: string
-	name: string
-	size?: number
-	secondAvatarUri?: string
-	isGroup?: boolean
-	style?: StyleProp<any>
-	isVerified?: boolean
-}
-
-export const RequestAvatar: React.FC<RequestAvatarProps> = ({
-	name,
-	style = null,
-	isVerified = false,
-}) => {
-	const [{ row, flex, text, margin, color }] = useStyles()
-	return (
-		<View style={[row.left, flex.tiny, { justifyContent: 'center' }, style]}>
-			<View style={[flex.tiny, row.item.bottom, row.center]}>
-				<Text category='h6' style={[text.align.center, text.color.black]} numberOfLines={1}>
-					{name}
-				</Text>
-				{isVerified && (
-					<Icon
-						style={[margin.left.small]}
-						name='checkmark-circle-2'
-						width={20}
-						height={20}
-						fill={color.blue}
-					/>
-				)}
-			</View>
-		</View>
-	)
-}
-
-//
-// RequestMarkedAsVerified
-//
-
-// Styles
-const useStylesMarkAsVerified = () => {
-	const [{ border, text }] = useStyles()
-	return {
-		markAsVerified: border.big,
-		markAsVerifiedText: text.size.tiny,
-	}
-}
-
-export const MarkAsVerified: React.FC<{}> = () => {
+const MarkAsVerified: React.FC<{}> = () => {
 	const [isToggled, setIsToggled] = useState(false)
 
 	const handleToggled = () => setIsToggled(!isToggled)
-	const _styles = useStylesMarkAsVerified()
-	const [{ margin, padding, border, color, row, column, text }] = useStyles()
+	const [{ margin, padding, border, row, column, text }] = useStyles()
+	const colors = useThemeColor()
 
 	return (
 		<View
@@ -141,8 +94,8 @@ export const MarkAsVerified: React.FC<{}> = () => {
 				margin.top.medium,
 				padding.medium,
 				border.radius.medium,
-				_styles.markAsVerified,
-				{ borderColor: isToggled ? color.blue : '#E8E9FC' },
+				border.big,
+				{ borderColor: isToggled ? colors['background-header'] : colors['input-background'] },
 			]}
 		>
 			<View style={[row.fill]}>
@@ -151,21 +104,23 @@ export const MarkAsVerified: React.FC<{}> = () => {
 						name='checkmark-circle-2'
 						width={30}
 						height={30}
-						fill={isToggled ? color.blue : '#E8E9FC'}
+						fill={isToggled ? colors['background-header'] : colors['input-background']}
 						style={[column.item.center]}
 					/>
-					<Text style={[padding.left.small, column.item.center]}>Mark as verified</Text>
+					<UnifiedText style={[padding.left.small, column.item.center]}>
+						Mark as verified
+					</UnifiedText>
 				</View>
 				<View style={column.item.center}>
 					<Toggle status='primary' checked={isToggled} onChange={handleToggled} />
 				</View>
 			</View>
-			<Text
-				style={[text.color.grey, margin.top.medium, text.bold.medium, _styles.markAsVerifiedText]}
+			<UnifiedText
+				style={[margin.top.medium, text.bold, text.size.tiny, { color: colors['secondary-text'] }]}
 			>
 				Compare the fingerprint displayed above with the one on Caterpillar’s phone. If they are
 				identical, end-to-end encryption is guaranted on you can mark this contact as verified.
-			</Text>
+			</UnifiedText>
 		</View>
 	)
 }
@@ -217,7 +172,7 @@ const SelectedContent = ({
 				</View>
 			)
 		default:
-			return <Text>Error: Unknown content name "{contentName}"</Text>
+			return <UnifiedText>Error: Unknown content name "{contentName}"</UnifiedText>
 	}
 }
 
@@ -229,15 +184,23 @@ const BodyRequest: React.FC<BodyRequestProps> = ({
 	const [{ padding, absolute, row, text, border }] = useStyles()
 	const [selectedContent, setSelectedContent] = useState('fingerprint')
 	const contact = useContact(contactPublicKey)
+	const colors = useThemeColor()
 	return (
 		<View style={[padding.horizontal.medium, padding.bottom.medium]}>
-			<View style={[absolute.scale({ top: -70 }), row.item.justify, border.shadow.medium]}>
+			<View
+				style={[
+					absolute.scale({ top: -70 }),
+					row.item.justify,
+					border.shadow.medium,
+					{ shadowColor: colors.shadow },
+				]}
+			>
 				<ContactAvatar publicKey={contactPublicKey} size={140} />
 			</View>
 			<View style={[padding.horizontal.medium, padding.top.scale(75)]}>
-				<Text style={[padding.vertical.tiny, text.align.center, text.size.big]}>
+				<UnifiedText style={[padding.vertical.tiny, text.align.center, text.size.big]}>
 					{contact?.displayName || ''}
-				</Text>
+				</UnifiedText>
 				<TabBar
 					tabs={[
 						{ key: 'fingerprint', name: 'Fingerprint', icon: 'fingerprint', iconPack: 'custom' },

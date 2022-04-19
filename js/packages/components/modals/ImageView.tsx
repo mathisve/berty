@@ -1,32 +1,26 @@
 import React, { useState } from 'react'
-import { useStyles } from '@berty-tech/styles'
 import { View, Modal, TouchableOpacity, Image } from 'react-native'
-import { Text, Icon } from '@ui-kitten/components'
+import { Icon } from '@ui-kitten/components'
 import { useTranslation } from 'react-i18next'
 import CameraRoll from '@react-native-community/cameraroll'
 import Share from 'react-native-share'
-
-import { useConversationsCount } from '@berty-tech/store/hooks'
-import { ForwardToBertyContactModal } from './ForwardToBertyContactModal'
-import beapi from '@berty-tech/api'
-import { useNavigation } from '@berty-tech/navigation'
 import ImageViewer from 'react-native-image-zoom-viewer'
 
-export const ImageView: React.FC<{
-	route: {
-		params: {
-			images: beapi.messenger.IMedia[]
-			previewOnly?: boolean
-		}
-	}
-}> = ({
+import { useStyles } from '@berty/styles'
+import { useThemeColor } from '@berty/store'
+import { ScreenFC, useNavigation } from '@berty/navigation'
+
+import { ForwardToBertyContactModal } from './ForwardToBertyContactModal'
+import { UnifiedText } from '../shared-components/UnifiedText'
+
+export const ImageView: ScreenFC<'Modals.ImageView'> = ({
 	route: {
 		params: { images, previewOnly = false },
 	},
 }) => {
-	const [{ color, border, padding }] = useStyles()
+	const [{ border, padding }] = useStyles()
+	const colors = useThemeColor()
 	const { t }: { t: any } = useTranslation()
-	const hasConversation = useConversationsCount()
 	const { goBack } = useNavigation()
 
 	const [currentIndex, setCurrentIndex] = useState(0)
@@ -43,52 +37,55 @@ export const ImageView: React.FC<{
 		{
 			title: t('chat.files.save-to-gallery'),
 			onPress() {
-				images[currentIndex] &&
-					CameraRoll.save(images[currentIndex].uri, { type: 'photo' })
-						.then(() => {
-							setModalVisibility(false)
-							handleMessage(t('chat.files.image-saved'))
-						})
-						.catch((err) => console.log(err))
+				const uri = images[currentIndex]?.uri
+				if (!uri) {
+					return
+				}
+				CameraRoll.save(uri, { type: 'photo' })
+					.then(() => {
+						setModalVisibility(false)
+						handleMessage(t('chat.files.image-saved'))
+					})
+					.catch(err => console.log(err))
 			},
 		},
 		{
 			title: t('chat.files.share'),
 			onPress() {
-				images[currentIndex] &&
-					Share.open({
-						url: images[currentIndex].uri,
+				const img = images[currentIndex]
+				if (!img) {
+					return
+				}
+				Share.open({
+					title: img.displayName || img.filename || 'Image from Berty',
+					url: img.uri,
+				})
+					.then(() => {})
+					.catch(err => {
+						err && console.log(err)
 					})
-						.then(() => {})
-						.catch((err) => {
-							err && console.log(err)
-						})
 			},
 		},
-		...(hasConversation
-			? [
-					{
-						title: t('chat.files.forward-berty'),
-						onPress() {
-							setForwardModalVisibility(true)
-							setModalVisibility(false)
-						},
-					},
-			  ]
-			: []),
+		{
+			title: t('chat.files.forward-berty'),
+			onPress() {
+				setForwardModalVisibility(true)
+				setModalVisibility(false)
+			},
+		},
 	]
 
 	return (
 		<Modal transparent>
 			<ImageViewer
-				imageUrls={images.map((image) => ({
+				imageUrls={images.map(image => ({
 					url: image.uri || Image.resolveAssetSource(image).uri,
 				}))}
 				index={0}
 				onClick={() => {
-					setModalVisibility((prev) => !prev)
+					setModalVisibility(prev => !prev)
 				}}
-				onChange={(index) => {
+				onChange={index => {
 					index && setCurrentIndex(index)
 				}}
 				renderFooter={() => <></>}
@@ -107,20 +104,13 @@ export const ImageView: React.FC<{
 					>
 						<Icon
 							name='arrow-back-outline'
-							fill='white'
-							style={{
-								opacity: 0.8,
-							}}
+							fill={colors['reverted-main-text']}
+							style={{ opacity: 0.8 }}
 							height={30}
 							width={30}
 						/>
 					</TouchableOpacity>
-					<TouchableOpacity
-						onPress={() => setModalVisibility(false)}
-						style={{
-							flex: 1,
-						}}
-					/>
+					<TouchableOpacity onPress={() => setModalVisibility(false)} style={{ flex: 1 }} />
 					{!previewOnly && (
 						<View
 							style={[
@@ -129,21 +119,15 @@ export const ImageView: React.FC<{
 									left: 0,
 									bottom: 0,
 									right: 0,
-									backgroundColor: color.white,
+									backgroundColor: colors['main-background'],
 								},
 								padding.medium,
 								border.radius.top.large,
 							]}
 						>
-							{MENU_LIST.map((item) => (
+							{MENU_LIST.map(item => (
 								<TouchableOpacity key={item.title} onPress={item.onPress} style={[padding.medium]}>
-									<Text
-										style={{
-											textAlign: 'center',
-										}}
-									>
-										{item.title}
-									</Text>
+									<UnifiedText style={{ textAlign: 'center' }}>{item.title}</UnifiedText>
 								</TouchableOpacity>
 							))}
 						</View>
@@ -168,20 +152,10 @@ export const ImageView: React.FC<{
 							border.radius.large,
 							padding.vertical.small,
 							padding.horizontal.large,
-							{
-								backgroundColor: 'white',
-							},
+							{ backgroundColor: colors['main-background'] },
 						]}
 					>
-						<Text
-							style={[
-								{
-									color: 'black',
-								},
-							]}
-						>
-							{message}
-						</Text>
+						<UnifiedText style={{ color: 'black' }}>{message}</UnifiedText>
 					</View>
 				</View>
 			)}

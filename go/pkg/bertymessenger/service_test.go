@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"berty.tech/berty/v2/go/internal/messengerdb"
+	"berty.tech/berty/v2/go/internal/messengerutil"
 	"berty.tech/berty/v2/go/internal/testutil"
 	"berty.tech/berty/v2/go/pkg/messengertypes"
 	"berty.tech/berty/v2/go/pkg/protocoltypes"
@@ -31,6 +34,7 @@ func TestServiceStream(t *testing.T) {
 	time.Sleep(time.Second)
 
 	account := node.GetAccount()
+	require.NotEmpty(t, account)
 	require.NotEmpty(t, account.Link)
 	require.NotEmpty(t, account.PublicKey)
 	require.Empty(t, account.DisplayName)
@@ -87,8 +91,8 @@ func TestServiceSetNameAsync(t *testing.T) {
 	}
 }
 
-func TestUnstableServiceStreamCancel(t *testing.T) {
-	testutil.FilterStability(t, testutil.Unstable)
+func TestFlappyServiceStreamCancel(t *testing.T) {
+	testutil.FilterStability(t, testutil.Flappy)
 
 	ctx, ctxCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	node, cleanup := testingNode(ctx, t)
@@ -107,7 +111,8 @@ func TestUnstableServiceStreamCancel(t *testing.T) {
 	{
 		var err error
 		for err == nil {
-			_, err = node.GetStream(t).Recv()
+			e := <-node.GetStream(t)
+			err = e.err
 		}
 		require.True(t, isGRPCCanceledError(err))
 	}
@@ -326,7 +331,7 @@ func TestBroken1To1Exchange(t *testing.T) {
 func TestBrokenPeersCreateJoinConversation(t *testing.T) {
 	testutil.FilterStabilityAndSpeed(t, testutil.Broken, testutil.Slow)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	logger, cleanup := testutil.Logger(t)
 	defer cleanup()
@@ -357,7 +362,7 @@ func TestBrokenPeersCreateJoinConversation(t *testing.T) {
 
 	// get conv link
 	gpk := createdConv.GetPublicKey()
-	gpkb, err := b64DecodeBytes(gpk)
+	gpkb, err := messengerutil.B64DecodeBytes(gpk)
 	require.NoError(t, err)
 	sbg, err := creator.GetClient().ShareableBertyGroup(ctx, &messengertypes.ShareableBertyGroup_Request{GroupPK: gpkb, GroupName: convName})
 	require.NoError(t, err)
@@ -370,12 +375,13 @@ func TestBrokenPeersCreateJoinConversation(t *testing.T) {
 	}
 
 	// wait for events propagation
-	time.Sleep(10 * time.Second)
+	time.Sleep(time.Second)
 
 	// open streams and drain lists on all nodes
 	accounts := append([]*TestingAccount{creator}, joiners...)
 	for _, account := range accounts {
 		account.DrainInitEvents(t)
+		account.Close()
 	}
 
 	// no more event
@@ -406,6 +412,97 @@ func TestBrokenPeersCreateJoinConversation(t *testing.T) {
 			require.Equal(t, gpk, member.GetConversationPublicKey())
 		}
 	}
+
+	subCtx, subCancel := context.WithTimeout(ctx, time.Second*45)
+	cl, err := clients[1].EventStream(subCtx, &messengertypes.EventStream_Request{
+		ShallowAmount: 1,
+	})
+	require.NoError(t, err)
+
+	const messageCount = 100
+
+	ce := make(chan *messengertypes.EventStream_Reply, messageCount)
+	var subErr error
+	go func() {
+		defer close(ce)
+		defer subCancel()
+
+		var evt *messengertypes.EventStream_Reply
+		for {
+			evt, subErr = cl.Recv()
+			if subErr != nil {
+				return
+			}
+
+			ce <- evt
+		}
+	}()
+
+	for i := 0; i < messageCount; i++ {
+		payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{
+			Body: fmt.Sprintf("message %d", i),
+		})
+		require.NoError(t, err)
+
+		_, err = clients[0].Interact(
+			ctx,
+			&messengertypes.Interact_Request{
+				Type:                  messengertypes.AppMessage_TypeUserMessage,
+				Payload:               payload,
+				ConversationPublicKey: gpk,
+			},
+		)
+		require.NoError(t, err, fmt.Sprintf("sent %d items", i))
+	}
+
+	expectedMessages := make([]string, messageCount)
+	for i := 0; i < messageCount; i++ {
+		expectedMessages[i] = fmt.Sprintf("message %d", i)
+	}
+
+	for evt := range ce {
+		if evt.Event.Type != messengertypes.StreamEvent_TypeInteractionUpdated {
+			continue
+		}
+
+		interaction := &messengertypes.StreamEvent_InteractionUpdated{}
+		err := proto.Unmarshal(evt.Event.Payload, interaction)
+		require.NoError(t, err)
+
+		if interaction.Interaction.Type != messengertypes.AppMessage_TypeUserMessage {
+			continue
+		}
+
+		message := &messengertypes.AppMessage_UserMessage{}
+		err = proto.Unmarshal(interaction.Interaction.Payload, message)
+		require.NoError(t, err)
+
+		foundMessage := false
+		for i, ref := range expectedMessages {
+			if message.Body == ref {
+				expectedMessages = append(expectedMessages[:i], expectedMessages[i+1:]...)
+				foundMessage = true
+				t.Log(fmt.Sprintf("     found message : %s", message.Body))
+				break
+			}
+		}
+
+		if !foundMessage {
+			t.Log(fmt.Sprintf("unexpected message : %s", message.Body))
+		}
+
+		if len(expectedMessages) == 0 {
+			break
+		}
+
+		t.Logf("remaining messages : %s", strings.Join(expectedMessages, ","))
+	}
+
+	assert.Empty(t, len(expectedMessages))
+
+	require.NoError(t, err)
+	require.NoError(t, subErr)
+	cl.CloseSend()
 }
 
 func TestBroken3PeersExchange(t *testing.T) {
@@ -985,13 +1082,13 @@ func testSendGroupMessage(ctx context.Context, t *testing.T, groupPK string, sen
 	// sender interacts
 	var beforeSend, afterSend int64
 	{
-		beforeSend = timestampMs(time.Now())
+		beforeSend = messengerutil.TimestampMs(time.Now())
 		userMessage, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{Body: msg})
 		require.NoError(t, err)
 		interactionRequest := messengertypes.Interact_Request{Type: messengertypes.AppMessage_TypeUserMessage, Payload: userMessage, ConversationPublicKey: groupPK}
 		_, err = sender.GetClient().Interact(ctx, &interactionRequest)
 		require.NoError(t, err)
-		afterSend = timestampMs(time.Now())
+		afterSend = messengerutil.TimestampMs(time.Now())
 		logger.Debug("testSendGroupMessage: message sent")
 	}
 
@@ -1290,7 +1387,7 @@ func TestAccountUpdate(t *testing.T) {
 	reply, err := stream.CloseAndRecv()
 	require.NoError(t, err)
 
-	userAvatarCID := b64EncodeBytes(reply.GetAttachmentCID())
+	userAvatarCID := messengerutil.B64EncodeBytes(reply.GetAttachmentCID())
 
 	logger.Info("starting update")
 	const testName = "user"
@@ -1314,7 +1411,7 @@ func TestAccountUpdate(t *testing.T) {
 		cids = append(cids, userInFriend.GetAvatarCID())
 
 		// check attachment
-		cidBytes, err := b64DecodeBytes(avatarCIDInFriend)
+		cidBytes, err := messengerutil.B64DecodeBytes(avatarCIDInFriend)
 		require.NoError(t, err)
 		stream, err := friend.protocolClient.AttachmentRetrieve(ctx, &protocoltypes.AttachmentRetrieve_Request{AttachmentCID: cidBytes})
 		require.NoError(t, err)
@@ -1333,8 +1430,8 @@ func TestAccountUpdate(t *testing.T) {
 	logger.Error("test done")
 }
 
-func TestUnstableAccountUpdateGroup(t *testing.T) {
-	testutil.FilterStabilityAndSpeed(t, testutil.Unstable, testutil.Slow)
+func TestFlappyAccountUpdateGroup(t *testing.T) {
+	testutil.FilterStabilityAndSpeed(t, testutil.Flappy, testutil.Slow)
 
 	// PREPARE
 	logger, cleanup := testutil.Logger(t)
@@ -1421,7 +1518,7 @@ func TestUnstableAccountUpdateGroup(t *testing.T) {
 		cids = append(cids, userInFriend.GetAvatarCID())
 
 		// check attachment
-		cidBytes, err := b64DecodeBytes(avatarCIDInFriend)
+		cidBytes, err := messengerutil.B64DecodeBytes(avatarCIDInFriend)
 		require.NoError(t, err)
 		stream, err := friend.protocolClient.AttachmentRetrieve(ctx, &protocoltypes.AttachmentRetrieve_Request{AttachmentCID: cidBytes})
 		require.NoError(t, err)
@@ -1467,9 +1564,9 @@ func TestSendBlob(t *testing.T) {
 
 	testCID := reply.GetAttachmentCID()
 
-	b64CID := b64EncodeBytes(testCID)
+	b64CID := messengerutil.B64EncodeBytes(testCID)
 
-	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{})
+	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{Body: "Hello"})
 	require.NoError(t, err)
 	_, err = user.client.Interact(ctx, &messengertypes.Interact_Request{
 		ConversationPublicKey: friendAsContact.GetConversationPublicKey(),
@@ -1503,10 +1600,10 @@ func TestSendBlob(t *testing.T) {
 	require.NotNil(t, media)
 	cid := media.GetCID()
 	require.NotEmpty(t, cid)
-	require.Equal(t, b64EncodeBytes(testCID), cid)
+	require.Equal(t, messengerutil.B64EncodeBytes(testCID), cid)
 
 	// check attachment
-	cidBytes, err := b64DecodeBytes(cid)
+	cidBytes, err := messengerutil.B64DecodeBytes(cid)
 	require.NoError(t, err)
 	retStream, err := friend.protocolClient.AttachmentRetrieve(ctx, &protocoltypes.AttachmentRetrieve_Request{AttachmentCID: cidBytes})
 	require.NoError(t, err)
@@ -1550,7 +1647,7 @@ func TestSendMedia(t *testing.T) {
 
 	b64CID := reply.GetCid()
 
-	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{})
+	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{Body: "Hello"})
 	require.NoError(t, err)
 	_, err = user.client.Interact(ctx, &messengertypes.Interact_Request{
 		ConversationPublicKey: friendAsContact.GetConversationPublicKey(),
@@ -1620,18 +1717,18 @@ func TestSendMedia(t *testing.T) {
 }
 
 func Test_exportMessengerData(t *testing.T) {
-	db, cleanup := getInMemoryTestDB(t)
+	db, gormDB, cleanup := messengerdb.GetInMemoryTestDB(t)
 	defer cleanup()
 
-	db.db.Create(&messengertypes.Account{PublicKey: "pk_account_1", DisplayName: "display_name", ReplicateNewGroupsAutomatically: true})
-	db.db.Create(&messengertypes.Conversation{PublicKey: "pk_conv_1", UnreadCount: 1000, IsOpen: false})
-	db.db.Create(&messengertypes.Conversation{PublicKey: "pk_conv_2", UnreadCount: 2000, IsOpen: true})
-	db.db.Create(&messengertypes.Conversation{PublicKey: "pk_conv_3", UnreadCount: 3000, IsOpen: false})
+	gormDB.Create(&messengertypes.Account{PublicKey: "pk_account_1", DisplayName: "display_name", ReplicateNewGroupsAutomatically: true})
+	gormDB.Create(&messengertypes.Conversation{PublicKey: "pk_conv_1", UnreadCount: 1000, IsOpen: false})
+	gormDB.Create(&messengertypes.Conversation{PublicKey: "pk_conv_2", UnreadCount: 2000, IsOpen: true})
+	gormDB.Create(&messengertypes.Conversation{PublicKey: "pk_conv_3", UnreadCount: 3000, IsOpen: false})
 
 	tmpFile, err := ioutil.TempFile(os.TempDir(), "messenger-export-")
 	require.NoError(t, err)
 
-	err = exportMessengerData(tmpFile, db.db, zap.NewNop())
+	err = exportMessengerData(tmpFile, db)
 	require.NoError(t, err)
 
 	_, err = tmpFile.Seek(0, io.SeekStart)
@@ -1672,7 +1769,7 @@ func TestUserReaction(t *testing.T) {
 	// send message
 	convPK := friend.GetContact(t, userPK).GetConversationPublicKey()
 	require.NotNil(t, convPK)
-	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{})
+	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{Body: "Hello"})
 	require.NoError(t, err)
 	interactReply, err := user.client.Interact(ctx, &messengertypes.Interact_Request{
 		Type:                  messengertypes.AppMessage_TypeUserMessage,
@@ -1784,7 +1881,7 @@ func TestReply(t *testing.T) {
 	require.NotNil(t, convPK)
 
 	// send message
-	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{})
+	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{Body: "Hello"})
 	require.NoError(t, err)
 	interactReply, err := user.client.Interact(ctx, &messengertypes.Interact_Request{
 		Type:                  messengertypes.AppMessage_TypeUserMessage,
@@ -1820,5 +1917,41 @@ func TestReply(t *testing.T) {
 		castedValue, ok := replyPayload.(*messengertypes.AppMessage_UserMessage)
 		require.True(t, ok)
 		require.Equal(t, "Test", castedValue.GetBody())
+	}
+}
+
+func TestAck(t *testing.T) {
+	testutil.FilterStabilityAndSpeed(t, testutil.Stable, testutil.Slow)
+
+	ctx, nodes, logger, clean := Testing1To1ProcessWholeStream(t)
+	defer clean()
+	user := nodes[0]
+	userPK := user.GetAccount().GetPublicKey()
+	friend := nodes[1]
+
+	logger.Info("starting test")
+
+	convPK := friend.GetContact(t, userPK).GetConversationPublicKey()
+	require.NotNil(t, convPK)
+
+	// send message
+	payload, err := proto.Marshal(&messengertypes.AppMessage_UserMessage{Body: "Hello"})
+	require.NoError(t, err)
+
+	interactRes, err := user.client.Interact(ctx, &messengertypes.Interact_Request{
+		Type:                  messengertypes.AppMessage_TypeUserMessage,
+		Payload:               payload,
+		ConversationPublicKey: convPK,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, interactRes.GetCID())
+	time.Sleep(1 * time.Second)
+
+	// check reply interaction in nodes
+	for _, user := range nodes {
+		retrievedInteraction := user.GetInteraction(t, interactRes.GetCID())
+		require.NotNil(t, retrievedInteraction)
+		require.Equal(t, retrievedInteraction.CID, interactRes.CID)
+		require.Equal(t, retrievedInteraction.Acknowledged, true)
 	}
 }
