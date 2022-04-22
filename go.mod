@@ -41,7 +41,7 @@ require (
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/improbable-eng/grpc-web v0.14.0
 	github.com/ipfs-shipyard/gomobile-ipfs/go v0.0.0-20210203140645-9df95f2abec2
-	github.com/ipfs/go-cid v0.0.7
+	github.com/ipfs/go-cid v0.2.0
 	github.com/ipfs/go-datastore v0.4.5
 	github.com/ipfs/go-ds-badger v0.2.6
 	github.com/ipfs/go-ipfs v0.8.0
@@ -98,7 +98,7 @@ require (
 	go.uber.org/goleak v1.1.10
 	go.uber.org/multierr v1.7.0
 	go.uber.org/zap v1.16.0
-	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
+	golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf
 	golang.org/x/mobile v0.0.0-20210220033013-bdb1ca9a1e08
 	golang.org/x/net v0.0.0-20210410081132-afb366fc7cd1
 	golang.org/x/tools v0.1.2
